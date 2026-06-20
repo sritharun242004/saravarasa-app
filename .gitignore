@@ -33,8 +33,8 @@ dist/
 # Uploads / generated data
 uploads/
 backend/uploads/
-data/*.xlsx
-data/*.csv
+*.xlsx
+*.csv
 !data/.gitkeep
 
 # IDE / OS
