@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      CONTENT_SAFETY_MODEL: ${CONTENT_SAFETY_MODEL:-nvidia/nemotron-3.5-content-safety:free}
+      INDB_FILE_PATH: /app/data/Anuvaad_INDB_2024.11.xlsx
+      UPLOAD_DIR: /app/uploads
+      CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000"]'}
+    volumes:
+      - ./data:/app/data:ro
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  backend_uploads:
