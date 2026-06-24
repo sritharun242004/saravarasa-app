@@ -23,14 +23,15 @@ jobs:
           set -e
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.event.after }}"
+          # Fallback for workflow_dispatch and other non-push events
+          [ -z "$AFTER" ] && AFTER="$(git rev-parse HEAD)"
 
-          # First push to main (BEFORE is 40 zeros) → check all commits reachable from AFTER
+          # First push to main (BEFORE is 40 zeros), workflow_dispatch (BEFORE empty),
+          # or unknown previous → check just the HEAD commit
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            RANGE="$AFTER"
-            SHAS=$(git log --format=%H "$RANGE")
+            SHAS=$(git log --format=%H -1 "$AFTER")
           else
-            RANGE="$BEFORE..$AFTER"
-            SHAS=$(git log --format=%H "$RANGE")
+            SHAS=$(git log --format=%H "$BEFORE..$AFTER")
           fi
 
           if [ -z "$SHAS" ]; then
