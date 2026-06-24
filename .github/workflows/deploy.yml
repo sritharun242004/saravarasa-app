@@ -110,6 +110,20 @@ jobs:
             deactivate
           fi
 
+          # Always run pending migrations; alembic is a no-op when up to date
+          echo "=== alembic upgrade head ==="
+          cd "$APP/backend"
+          . venv/bin/activate
+          PYTHONPATH=. \
+          DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" \
+          CORS_ORIGINS='["http://13.50.153.69"]' \
+          OPENROUTER_API_KEY=dummy \
+          SECRET_KEY=dummy \
+          INDB_FILE_PATH=/tmp/dummy.xlsx \
+          UPLOAD_DIR=/tmp \
+          alembic upgrade head
+          deactivate
+
           REBUILD_FRONTEND=0
           if printf '%s\n' "$CHANGED" | grep -qE '^frontend/(package(-lock)?\.json)$'; then
             echo "=== npm ci ==="
