@@ -1,0 +1,140 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  block-claude-coauthor:
+    name: Block Claude co-authored commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Inspect new commits
+        run: |
+          set -e
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.event.after }}"
+
+          # First push to main (BEFORE is 40 zeros) → check all commits reachable from AFTER
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="$AFTER"
+            SHAS=$(git log --format=%H "$RANGE")
+          else
+            RANGE="$BEFORE..$AFTER"
+            SHAS=$(git log --format=%H "$RANGE")
+          fi
+
+          if [ -z "$SHAS" ]; then
+            echo "No new commits — nothing to check."
+            exit 0
+          fi
+
+          BAD=0
+          for sha in $SHAS; do
+            MSG=$(git log -1 --format=%B "$sha")
+            # Only match real trailers/markers (anchored to line start), not prose
+            # describing the rule. Catches:
+            #   Co-Authored-By: Claude ...
+            #   🤖 Generated with [Claude Code](...)
+            if printf '%s' "$MSG" | grep -iqE '^[[:space:]]*co-authored-by:[[:space:]]+claude' \
+              || printf '%s' "$MSG" | grep -qE '^[[:space:]]*🤖[[:space:]]+Generated with \[Claude'; then
+              SHORT=$(git log -1 --format='%h %s' "$sha")
+              echo "::error::Blocked commit $SHORT names Claude as co-author or generator"
+              printf '%s\n' "$MSG" | sed 's/^/    /'
+              BAD=1
+            fi
+          done
+
+          if [ "$BAD" = "1" ]; then
+            echo ""
+            echo "::error::Deploy blocked. Rewrite the offending commits (git rebase -i, drop the Co-Authored-By / Generated-with lines) and force-push to main."
+            exit 1
+          fi
+
+          echo "OK: no Claude co-author or generator trailers in this push."
+
+  deploy:
+    name: Deploy to EC2
+    needs: block-claude-coauthor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull, install, build, restart
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$USER@$HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+
+          APP=/home/ubuntu/saravarasa-app
+          cd "$APP"
+
+          PREV=$(git rev-parse HEAD)
+          git fetch --prune origin main
+          git reset --hard origin/main
+          CURR=$(git rev-parse HEAD)
+
+          if [ "$PREV" = "$CURR" ]; then
+            CHANGED=""
+            echo "No new commits on server (already at $CURR). Restarting anyway."
+          else
+            CHANGED=$(git diff --name-only "$PREV" "$CURR")
+            echo "Changed files:"
+            printf '  %s\n' $CHANGED
+          fi
+
+          if printf '%s\n' "$CHANGED" | grep -qx 'backend/requirements.txt'; then
+            echo "=== Reinstalling backend deps ==="
+            cd "$APP/backend"
+            . venv/bin/activate
+            pip install -r requirements.txt
+            deactivate
+          fi
+
+          REBUILD_FRONTEND=0
+          if printf '%s\n' "$CHANGED" | grep -qE '^frontend/(package(-lock)?\.json)$'; then
+            echo "=== npm ci ==="
+            cd "$APP/frontend"
+            npm ci --no-audit --no-fund
+            REBUILD_FRONTEND=1
+          fi
+          if printf '%s\n' "$CHANGED" | grep -q '^frontend/'; then
+            REBUILD_FRONTEND=1
+          fi
+          if [ "$REBUILD_FRONTEND" = "1" ]; then
+            echo "=== next build ==="
+            cd "$APP/frontend"
+            NODE_OPTIONS="--max-old-space-size=1024" npm run build
+          fi
+
+          echo "=== Restart services ==="
+          sudo /bin/systemctl restart sarvarasa-backend
+          sudo /bin/systemctl restart sarvarasa-frontend
+
+          echo "=== Health check ==="
+          sleep 6
+          curl -fsS --max-time 10 http://127.0.0.1:8000/health
+          echo
+          curl -fsS --max-time 10 -o /dev/null -w 'frontend HTTP %{http_code}\n' http://127.0.0.1:3000/
+
+          echo "Deployed $CURR"
+          REMOTE
