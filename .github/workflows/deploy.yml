@@ -27,11 +27,12 @@ jobs:
           [ -z "$AFTER" ] && AFTER="$(git rev-parse HEAD)"
 
           # First push to main (BEFORE is 40 zeros), workflow_dispatch (BEFORE empty),
-          # or unknown previous → check just the HEAD commit
+          # or BEFORE not reachable (force-push that rewrote history) → check HEAD only
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             SHAS=$(git log --format=%H -1 "$AFTER")
-          else
-            SHAS=$(git log --format=%H "$BEFORE..$AFTER")
+          elif ! SHAS=$(git log --format=%H "$BEFORE..$AFTER" 2>/dev/null); then
+            echo "Range $BEFORE..$AFTER not reachable (likely a force-push). Checking HEAD only."
+            SHAS=$(git log --format=%H -1 "$AFTER")
           fi
 
           if [ -z "$SHAS" ]; then
