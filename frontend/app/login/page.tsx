@@ -9,44 +9,46 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/lib/use-toast";
 import { login } from "@/lib/api";
-import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { isCognitoConfigured } from "@/lib/cognito";
+import { Loader2, ArrowRight } from "lucide-react";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
 const TOKEN_KEY = "sarvarasa_token";
 
 const inputCls =
-  "w-full px-4 py-3 rounded-xl border border-border bg-card font-body text-sm text-dark placeholder:text-dark/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
+  "w-full px-5 h-12 rounded-full border border-border bg-white/60 font-body text-sm text-dark placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus:border-accent transition";
 
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
+
+  const set = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password) {
+    if (!form.email.trim() || !form.password) {
       toast({ title: "Email and password are required", variant: "destructive" });
       return;
     }
+
     setLoading(true);
     try {
-      const res = await login(email, password);
-
-      localStorage.setItem(TOKEN_KEY, res.token);
+      const res = await login(form.email, form.password);
       localStorage.setItem(CLIENT_ID_KEY, res.client_id);
       localStorage.setItem(CLIENT_NAME_KEY, res.name);
+      if (res.token) localStorage.setItem(TOKEN_KEY, res.token);
 
-      toast({ title: `Welcome back, ${res.name}!` });
-      router.push("/challenge");
+      toast({ title: "Welcome back!" });
+      router.push("/profile");
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        "Invalid email or password.";
-      toast({ title: "Login failed", description: msg, variant: "destructive" });
+        "Login failed. Check your email and password.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -54,74 +56,79 @@ export default function LoginPage() {
 
   return (
     <AppShell>
-      <div className="max-w-lg mx-auto px-4 py-16">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-16 overflow-hidden">
+        <div className="absolute -top-10 -left-16 w-80 h-80 bg-primary/10 blur-3xl blob-1 pointer-events-none" />
+        <div className="absolute bottom-0 -right-16 w-80 h-80 bg-secondary/10 blur-3xl blob-2 pointer-events-none" />
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🌿</span>
-            </div>
-            <h1 className="font-heading text-3xl font-bold text-dark mb-2">Welcome Back</h1>
-            <p className="font-body text-dark/60">Log in to continue your challenge</p>
+            <h1 className="font-heading text-4xl font-bold text-dark mb-2">Welcome Back</h1>
+            <p className="font-body text-muted-foreground">Log in to continue your wellness journey</p>
           </div>
 
-          <Card>
-            <CardContent className="p-6">
-              <form onSubmit={handleSubmit} className="space-y-4">
+          <Card className="shadow-float">
+            <CardContent className="p-8">
+              {isCognitoConfigured() && (
+                <>
+                  <GoogleSignInButton label="Log in with Google" />
+                  <div className="flex items-center gap-3 my-6">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="font-body text-xs text-muted-foreground uppercase tracking-widest">or</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                </>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                  <label className="block font-body text-sm font-medium text-dark mb-1.5">
+                  <label className="block font-body text-sm font-medium text-dark mb-2">
                     Email <span className="text-destructive">*</span>
                   </label>
                   <input
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@gmail.com"
+                    value={form.email}
+                    onChange={(e) => set("email", e.target.value)}
+                    placeholder="you@example.com"
                     required
-                    autoFocus
                     className={inputCls}
                   />
                 </div>
 
                 <div>
-                  <label className="block font-body text-sm font-medium text-dark mb-1.5">
+                  <label className="block font-body text-sm font-medium text-dark mb-2">
                     Password <span className="text-destructive">*</span>
                   </label>
-                  <div className="relative">
-                    <input
-                      type={showPw ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Your password"
-                      required
-                      className={inputCls + " pr-11"}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-dark/40 hover:text-dark"
-                    >
-                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className={inputCls}
+                  />
                 </div>
 
-                <Button type="submit" disabled={loading} size="lg" className="w-full">
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  size="lg"
+                  className="w-full"
+                >
                   {loading ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Logging in…</>
                   ) : (
                     <>Log In <ArrowRight className="w-4 h-4 ml-2" /></>
                   )}
                 </Button>
-
-                <p className="text-center font-body text-sm text-dark/60">
-                  Don&apos;t have an account?{" "}
-                  <Link href="/signup" className="text-primary font-medium hover:underline">
-                    Sign up free
-                  </Link>
-                </p>
               </form>
             </CardContent>
           </Card>
+
+          <p className="text-center font-body text-sm text-muted-foreground mt-6">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="text-primary font-bold hover:underline underline-offset-4">
+              Sign up
+            </Link>
+          </p>
         </motion.div>
       </div>
     </AppShell>

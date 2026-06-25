@@ -39,7 +39,14 @@ export default function AdminClientPage() {
 
   if (!detail) return null;
 
-  const { client, audit, compliance, meal_timeline, report, payment_history } = detail;
+  const { client, audit, lifestyle_audit, compliance, meal_timeline, report, payment_history } = detail;
+
+  const ZONE_BADGE: Record<string, string> = {
+    Green: "bg-accent/20 text-accent",
+    Yellow: "bg-yellow-100 text-yellow-700",
+    Orange: "bg-orange-100 text-orange-700",
+    Red: "bg-destructive/20 text-destructive",
+  };
 
   // Group timeline by cycle and day
   const byDay: Record<string, typeof meal_timeline> = {};
@@ -90,8 +97,80 @@ export default function AdminClientPage() {
           </CardContent>
         </Card>
 
-        {/* Audit */}
-        {audit && (
+        {/* Lifestyle Audit — scored 35-question assessment (Phase 2) */}
+        {lifestyle_audit && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Lifestyle Audit</CardTitle>
+                <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", ZONE_BADGE[lifestyle_audit.zone] || "bg-muted text-dark/60")}>
+                  {lifestyle_audit.zone} Zone
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="text-sm font-body space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  ["Score", `${lifestyle_audit.total_score} / ${lifestyle_audit.max_score}`],
+                  ["Focus Area", lifestyle_audit.lowest_domain || "—"],
+                  ["Strongest", lifestyle_audit.highest_domain || "—"],
+                ].map(([l, v]) => (
+                  <div key={l} className="bg-muted/40 rounded-xl p-3 text-center">
+                    <p className="text-xs text-dark/50 mb-0.5">{l}</p>
+                    <p className="font-semibold text-dark text-sm">{v}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Per-domain breakdown */}
+              <div>
+                <p className="text-xs font-semibold text-dark/50 uppercase tracking-wide mb-2">Domain Breakdown</p>
+                <div className="space-y-1.5">
+                  {Object.entries(lifestyle_audit.domains).map(([domain, val]) => (
+                    <div key={domain} className="flex items-center gap-3">
+                      <span className="w-28 shrink-0 text-dark/70 text-xs">{domain}</span>
+                      <span className="font-semibold text-dark text-xs">{val != null ? val.toFixed(1) : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {lifestyle_audit.priority_intervention && (
+                <div>
+                  <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">Priority Intervention</p>
+                  <p className="text-dark/80">{lifestyle_audit.priority_intervention}</p>
+                </div>
+              )}
+
+              {(lifestyle_audit.bnys_review_required || lifestyle_audit.baseline_labs_required) && (
+                <div className="flex flex-wrap gap-2">
+                  {lifestyle_audit.bnys_review_required && (
+                    <span className="text-xs bg-destructive/15 text-destructive px-2.5 py-1 rounded-full font-semibold">BNYS Review Required</span>
+                  )}
+                  {lifestyle_audit.baseline_labs_required && (
+                    <span className="text-xs bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full font-semibold">Baseline Labs Required</span>
+                  )}
+                </div>
+              )}
+
+              {lifestyle_audit.critical_flags?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-dark/50 uppercase tracking-wide mb-1.5">Clinical Flags</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {lifestyle_audit.critical_flags.map((f) => (
+                      <span key={f} className="text-[10px] bg-muted px-2 py-0.5 rounded-full text-dark/60">
+                        {f.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Legacy audit (old questionnaire) — shown only if the new one is absent */}
+        {!lifestyle_audit && audit && (
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">Lifestyle Audit</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 gap-2 text-sm font-body">

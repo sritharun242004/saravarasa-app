@@ -3,15 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database import get_db
+from app.core.security import require_admin
 from app.models.client import Client, ClientStatus
 from app.models.meal_log import MealLog
 from app.models.report import ChallengeReport
 from app.models.payment import PaymentTransaction
 from app.models.audit import LifestyleAudit
+from app.models.lifestyle_audit import LifestyleAuditResponse
+from app.models.test_attempt import TestAttempt
 from app.services.compliance_engine import calculate_compliance
 from app.services.eligibility_engine import BAND_LABELS
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+# Every /admin route requires a valid admin token.
+router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/dashboard")
@@ -32,11 +36,22 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
     )
     revenue = payments_r.scalar() or 0.0
 
+    profile_completed_r = await db.execute(
+        select(func.count(Client.id)).where(Client.profile_completed == True)
+    )
+    profile_completed_count = profile_completed_r.scalar() or 0
+
+    qualified_r = await db.execute(
+        select(func.count(Client.id)).where(Client.status == "QUALIFIED")
+    )
+    qualified_count = qualified_r.scalar() or 0
+
     status_counts = {
         "total": len(clients),
+        "profile_completed": profile_completed_count,
         "audit_completed": audit_completed_count,
         "active": 0,
-        "qualified": 0,
+        "qualified": qualified_count,
         "second_chance": 0,
         "locked": 0,
         "reactivated": 0,
@@ -82,13 +97,18 @@ async def list_clients(db: AsyncSession = Depends(get_db)):
             "name": client.name,
             "email": client.email,
             "phone": client.phone,
+            "sex": client.sex,
+            "gender": client.gender,
+            "age": client.age,
             "status": client.status,
+            "profile_completed": client.profile_completed,
             "audit_completed": client.audit_completed,
             "challenge_cycle": client.challenge_cycle,
             "compliance_pct": compliance["compliance_pct"],
             "completed_days": compliance["completed_days"],
             "compliance_status": compliance["status"],
             "qualification_status": report.qualification_status if report else None,
+            "eligibility_band": report.eligibility_band if report else None,
             "joined_at": client.joined_at,
         })
 
@@ -113,6 +133,12 @@ async def get_client_detail(client_id: str, db: AsyncSession = Depends(get_db)):
     )
     audit = audit_r.scalar_one_or_none()
 
+    # New scored 35-question lifestyle audit (Phase 2)
+    la_r = await db.execute(
+        select(LifestyleAuditResponse).where(LifestyleAuditResponse.client_id == client_id)
+    )
+    lifestyle_audit = la_r.scalar_one_or_none()
+
     payments_r = await db.execute(
         select(PaymentTransaction).where(PaymentTransaction.client_id == client_id)
     )
@@ -124,11 +150,14 @@ async def get_client_detail(client_id: str, db: AsyncSession = Depends(get_db)):
             "name": client.name,
             "age": client.age,
             "gender": client.gender,
+            "sex": client.sex,
+            "height_cm": client.height_cm,
             "weight_kg": client.weight_kg,
             "goal": client.goal,
             "phone": client.phone,
             "email": client.email,
             "status": client.status,
+            "profile_completed": client.profile_completed,
             "audit_completed": client.audit_completed,
             "challenge_cycle": client.challenge_cycle,
             "joined_at": client.joined_at,
@@ -141,6 +170,25 @@ async def get_client_detail(client_id: str, db: AsyncSession = Depends(get_db)):
             "outside_food_frequency": audit.outside_food_frequency if audit else None,
             "stress_level": audit.stress_level if audit else None,
         } if audit else None,
+        "lifestyle_audit": {
+            "total_score": lifestyle_audit.total_score,
+            "max_score": 65,
+            "zone": lifestyle_audit.zone,
+            "lowest_domain": lifestyle_audit.lowest_domain,
+            "highest_domain": lifestyle_audit.highest_domain,
+            "priority_intervention": lifestyle_audit.priority_intervention,
+            "bnys_review_required": lifestyle_audit.bnys_review_required,
+            "baseline_labs_required": lifestyle_audit.baseline_labs_required,
+            "critical_flags": lifestyle_audit.critical_flags or [],
+            "domains": {
+                "Sleep": (lifestyle_audit.section_b or {}).get("b_weighted"),
+                "Food & Eating": (lifestyle_audit.section_c or {}).get("c_weighted"),
+                "Movement": (lifestyle_audit.section_d or {}).get("d_weighted"),
+                "Stress": (lifestyle_audit.section_e or {}).get("e_weighted"),
+                "Digestion": (lifestyle_audit.section_f or {}).get("f_weighted"),
+            },
+            "completed_at": lifestyle_audit.completed_at,
+        } if lifestyle_audit else None,
         "compliance": compliance,
         "meal_timeline": [
             {
@@ -191,6 +239,7 @@ async def batch_summary(batch_id: str, db: AsyncSession = Depends(get_db)):
 
     stats = {
         "total": len(clients),
+        "profile_completed": 0,
         "audit_completed": 0,
         "qualified": 0,
         "second_chance": 0,
@@ -199,10 +248,18 @@ async def batch_summary(batch_id: str, db: AsyncSession = Depends(get_db)):
     }
 
     for client in clients:
+        if client.profile_completed:
+            stats["profile_completed"] += 1
         if client.audit_completed:
             stats["audit_completed"] += 1
         s = (client.status or "ACTIVE").upper()
-        if s in stats:
-            stats[s.lower()] = stats.get(s.lower(), 0) + 1
+        if s == "QUALIFIED":
+            stats["qualified"] += 1
+        elif s == "SECOND_CHANCE":
+            stats["second_chance"] += 1
+        elif s == "LOCKED":
+            stats["locked"] += 1
+        elif s == "ACTIVE":
+            stats["active"] += 1
 
     return {"batch_id": batch_id, **stats}

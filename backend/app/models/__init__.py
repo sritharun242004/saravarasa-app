@@ -9,3 +9,4 @@ from app.models.food_alias_search import FoodAliasSearch                        
 from app.models.meal_food import MealFood                                            # noqa: F401
 from app.models.challenge_attempt import ChallengeAttempt                            # noqa: F401
 from app.models.payment import PaymentTransaction                                    # noqa: F401
+from app.models.lifestyle_audit import LifestyleAuditQuestion, LifestyleAuditResponse  # noqa: F401

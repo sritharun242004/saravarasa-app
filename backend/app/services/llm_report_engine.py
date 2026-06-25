@@ -201,9 +201,12 @@ async def generate_llm_report(
     )
 
     try:
-        response = await or_client.chat.completions.create(
-            model=settings.llm_report_model,
-            messages=[{"role": "user", "content": prompt}],
+        response = await asyncio.wait_for(
+            or_client.chat.completions.create(
+                model=settings.llm_report_model,
+                messages=[{"role": "user", "content": prompt}],
+            ),
+            timeout=30.0
         )
         text = response.choices[0].message.content.strip()
 
@@ -214,6 +217,8 @@ async def generate_llm_report(
         json_match = re.search(r"\{.*\}", text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group())
+    except asyncio.TimeoutError:
+        print(f"[LLM report] generation timed out after 30s, using fallback")
     except Exception as e:
         print(f"[LLM report] generation failed: {e}")
 

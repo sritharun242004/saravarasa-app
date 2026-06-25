@@ -8,8 +8,9 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { getChallengeProgress, type ChallengeProgress } from "@/lib/api";
-import { Loader2, CheckCircle2, Circle, Lock, ArrowRight, Calendar } from "lucide-react";
+import { getChallengeProgress, generateReport, type ChallengeProgress } from "@/lib/api";
+import { useToast } from "@/lib/use-toast";
+import { Loader2, CheckCircle2, Circle, Lock, ArrowRight, Calendar, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
@@ -24,31 +25,27 @@ const MEAL_ICONS: Record<string, string> = {
 function DayCard({ day, completedDays, currentDay }: { day: number; completedDays: number[]; currentDay: number }) {
   const isComplete = completedDays.includes(day);
   const isCurrent = day === currentDay;
-  const isFuture = day > currentDay;
   const isPast = day < currentDay;
 
   const cardContent = (
     <motion.div
-      whileHover={{ scale: isFuture ? 1 : 1.02 }}
+      whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={cn(
-        "rounded-2xl border p-4 transition-all duration-200",
-        isComplete ? "border-accent/40 bg-accent/5 cursor-pointer" :
-        isCurrent ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20 cursor-pointer" :
-        isFuture ? "border-border/50 bg-card opacity-40 cursor-not-allowed" :
-        "border-border bg-card opacity-70 cursor-pointer"
+        "rounded-2xl border p-4 transition-all duration-200 cursor-pointer",
+        isComplete ? "border-green-200 bg-green-50" :
+        isCurrent ? "border-blue-300 bg-blue-50 ring-1 ring-blue-200" :
+        "border-gray-200 bg-white hover:border-gray-300"
       )}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="font-heading text-sm font-semibold text-dark/60">Day {day}</span>
+        <span className="font-heading text-sm font-semibold text-gray-700">Day {day}</span>
         {isComplete ? (
-          <CheckCircle2 className="w-5 h-5 text-accent" />
+          <CheckCircle2 className="w-5 h-5 text-green-600" />
         ) : isCurrent ? (
-          <Circle className="w-5 h-5 text-primary animate-pulse" />
-        ) : isFuture ? (
-          <Lock className="w-4 h-4 text-dark/30" />
+          <Circle className="w-5 h-5 text-blue-600 animate-pulse" />
         ) : (
-          <CheckCircle2 className="w-5 h-5 text-dark/30 opacity-50" />
+          <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>
         )}
       </div>
       <div className="flex gap-1.5 mt-2">
@@ -57,37 +54,46 @@ function DayCard({ day, completedDays, currentDay }: { day: number; completedDay
             key={meal}
             className={cn(
               "flex-1 h-1.5 rounded-full",
-              isComplete ? "bg-accent" : isCurrent ? "bg-primary/30" : "bg-muted"
+              isComplete ? "bg-green-400" : isCurrent ? "bg-blue-300" : "bg-gray-200"
             )}
           />
         ))}
       </div>
       {isCurrent && (
-        <p className="font-body text-xs text-primary font-medium mt-2">📝 Log today's meals →</p>
+        <p className="font-body text-xs text-blue-600 font-medium mt-2">→ Log meals</p>
       )}
       {isPast && !isComplete && (
-        <p className="font-body text-xs text-dark/40 mt-2">Day passed (no submission)</p>
-      )}
-      {isFuture && (
-        <p className="font-body text-xs text-dark/30 mt-2">Coming soon</p>
+        <p className="font-body text-xs text-gray-400 mt-2">Submitted</p>
       )}
     </motion.div>
   );
-
-  // Only make current and past days clickable
-  if (isFuture) {
-    return cardContent;
-  }
 
   return <Link href={`/challenge/day/${day}`}>{cardContent}</Link>;
 }
 
 export default function ChallengePage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [progress, setProgress] = useState<ChallengeProgress | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
   const clientId = typeof window !== "undefined" ? localStorage.getItem(CLIENT_ID_KEY) || "" : "";
+
+  const handleViewReport = async () => {
+    setGenerating(true);
+    try {
+      await generateReport(clientId);
+      router.push("/report");
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        "Could not generate your report. Ensure 6+ days are complete.";
+      toast({ title: "Report unavailable", description: msg, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   useEffect(() => {
     if (!clientId) {
@@ -122,6 +128,11 @@ export default function ChallengePage() {
   const currentDay = progress.current_day || 1;
   const compliancePct = progress.compliance_pct || 0;
   const consistencyPct = progress.consistency_pct || 0;
+
+  // Challenge is finished once all 7 days have all 3 meals (or the cursor passed day 7).
+  const challengeComplete = completedDays.length >= 7 || currentDay > 7;
+  // Only users who pass (85%+ compliance, i.e. 6 of 7 days) may generate/view the report.
+  const isQualified = compliancePct >= 85;
 
   return (
     <AppShell>
@@ -205,14 +216,44 @@ export default function ChallengePage() {
           </div>
         </motion.div>
 
-        {/* CTA */}
+        {/* CTA — after the 7-day challenge: passed users can view their report, then everyone continues to the audit */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <Link href={`/challenge/day/${currentDay}`}>
-            <Button size="lg" className="w-full group">
-              Log Day {currentDay} Meals
-              <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-            </Button>
-          </Link>
+          {challengeComplete ? (
+            <div className="flex flex-col gap-5">
+              {isQualified && (
+                <Button size="default" className="w-full" onClick={handleViewReport} disabled={generating}>
+                  {generating ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Preparing your report…</>
+                  ) : (
+                    <><FileText className="w-4 h-4 mr-2" />View My Report</>
+                  )}
+                </Button>
+              )}
+              <Link href="/audit">
+                <Button
+                  size="default"
+                  variant={isQualified ? "outline" : "default"}
+                  className="w-full group"
+                  disabled={generating}
+                >
+                  Continue to Lifestyle Audit
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </Link>
+              {!isQualified && (
+                <p className="font-body text-xs text-center text-dark/50">
+                  You need 85%+ compliance (6 of 7 days) to unlock your report.
+                </p>
+              )}
+            </div>
+          ) : (
+            <Link href={`/challenge/day/${currentDay}`}>
+              <Button size="lg" className="w-full group">
+                Log Day {currentDay} Meals
+                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
+          )}
         </motion.div>
 
         {/* Info */}

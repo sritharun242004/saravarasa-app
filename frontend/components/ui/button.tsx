@@ -6,29 +6,29 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold font-body transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-bold font-body transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 cursor-pointer active:scale-95",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-soft hover:bg-primary-600 hover:shadow-card active:scale-[0.98]",
+          "bg-primary text-primary-foreground shadow-soft hover:scale-105 hover:shadow-[0_6px_24px_-4px_rgba(27,96,64,0.3)]",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground shadow-soft hover:scale-105 hover:shadow-[0_6px_24px_-4px_rgba(168,84,72,0.3)]",
         outline:
-          "border-2 border-primary text-primary bg-transparent hover:bg-primary hover:text-primary-foreground",
+          "border-2 border-secondary text-secondary bg-transparent hover:bg-secondary/10 hover:scale-105",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "bg-secondary text-secondary-foreground shadow-soft hover:scale-105 hover:shadow-[0_6px_24px_-4px_rgba(193,140,93,0.3)]",
         accent:
-          "bg-accent text-accent-foreground shadow-soft hover:bg-accent-600 hover:shadow-card active:scale-[0.98]",
-        ghost: "hover:bg-muted hover:text-dark",
+          "bg-accent text-accent-foreground shadow-soft hover:scale-105 hover:shadow-[0_6px_24px_-4px_rgba(93,112,82,0.3)]",
+        ghost: "text-primary hover:bg-primary/10",
         link: "text-primary underline-offset-4 hover:underline p-0 h-auto",
       },
       size: {
-        default: "h-11 px-6 py-2",
-        sm: "h-9 rounded-lg px-4 text-xs",
-        lg: "h-14 rounded-2xl px-8 text-base",
-        xl: "h-16 rounded-2xl px-10 text-lg",
-        icon: "h-11 w-11",
+        default: "h-12 px-8 text-sm",
+        sm: "h-10 px-5 text-sm",
+        lg: "h-14 px-10 text-base",
+        xl: "h-16 px-12 text-lg",
+        icon: "h-12 w-12",
       },
     },
     defaultVariants: {

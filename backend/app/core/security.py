@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from fastapi import Header, HTTPException
 from jose import JWTError, jwt
 from app.config import settings
 
@@ -36,3 +37,13 @@ def decode_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def require_admin(authorization: Optional[str] = Header(None)) -> str:
+    """FastAPI dependency — allow only the configured admin token (sub == admin email)."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Admin authentication required")
+    sub = decode_token(authorization.removeprefix("Bearer "))
+    if not sub or not settings.admin_email or sub.lower() != settings.admin_email.lower():
+        raise HTTPException(403, "Admin access required")
+    return sub

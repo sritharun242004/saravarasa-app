@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Raleway:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,500&family=Nunito:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,23 +6,23 @@
 
 @layer base {
   :root {
-    --background: #F5F2EA;
-    --foreground: #1E1E1E;
-    --card: #FFFFFF;
-    --card-foreground: #1E1E1E;
+    --background: #FDFCF8;
+    --foreground: #2C2C24;
+    --card: #FEFEFA;
+    --card-foreground: #2C2C24;
     --primary: #1B6040;
-    --primary-foreground: #FFFFFF;
-    --secondary: #22C55E;
+    --primary-foreground: #F3F4F1;
+    --secondary: #C18C5D;
     --secondary-foreground: #FFFFFF;
-    --accent: #1B3020;
+    --accent: #5D7052;
     --accent-foreground: #FFFFFF;
-    --espresso: #2C1208;
-    --muted: #E8F5ED;
-    --muted-foreground: #4B6D57;
-    --border: #C0DBC9;
-    --input: #C0DBC9;
-    --ring: #1B6040;
-    --radius: 0.75rem;
+    --espresso: #2C2C24;
+    --muted: #F0EBE5;
+    --muted-foreground: #78786C;
+    --border: #DED8CF;
+    --input: #DED8CF;
+    --ring: #5D7052;
+    --radius: 1.5rem;
   }
 
   * {
@@ -32,11 +32,25 @@
   body {
     @apply bg-background text-dark font-body antialiased;
     font-size: 16px;
-    line-height: 1.6;
+    line-height: 1.65;
+    position: relative;
+  }
+
+  /* CRITICAL — global paper-grain texture overlay (wabi-sabi tactility). */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -49,24 +63,29 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
 
+  /* Frosted floating navigation glass */
   .glass {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(192, 219, 201, 0.5);
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(222, 216, 207, 0.6);
   }
+
+  /* Organic blob border-radius variants — "no straight lines in nature" */
+  .blob-1 { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  .blob-2 { border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; }
+  .blob-3 { border-radius: 50% 50% 35% 65% / 55% 45% 55% 45%; }
+  .blob-4 { border-radius: 70% 30% 50% 50% / 40% 60% 40% 60%; }
 
   .nutrition-gradient {
-    background: linear-gradient(135deg, #1B6040 0%, #22C55E 100%);
+    background: linear-gradient(135deg, #1B6040 0%, #5D7052 100%);
   }
-
   .accent-gradient {
-    background: linear-gradient(135deg, #1B6040 0%, #1B3020 100%);
+    background: linear-gradient(135deg, #5D7052 0%, #1B6040 100%);
   }
 }
 

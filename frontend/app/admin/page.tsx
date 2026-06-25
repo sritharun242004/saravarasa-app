@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAdminDashboard, getAdminClients, type AdminDashboard, type AdminClient } from "@/lib/api";
-import { Loader2, Users, Trophy, RefreshCw, Lock, TrendingUp, IndianRupee, Search, FileText } from "lucide-react";
+import { Loader2, Users, Trophy, RefreshCw, Lock, TrendingUp, IndianRupee, Search, FileText, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const ADMIN_TOKEN_KEY = "sarvarasa_admin_token";
+const ADMIN_EMAIL_KEY = "sarvarasa_admin_email";
 
 const STATUS_COLORS: Record<string, string> = {
   QUALIFIED:     "bg-accent/20 text-accent border-accent/30",
@@ -60,20 +65,35 @@ function StatCard({ icon: Icon, label, value, color }: {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [clients, setClients] = useState<AdminClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
 
+  const logout = useCallback(() => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_EMAIL_KEY);
+    router.push("/admin/login");
+  }, [router]);
+
   useEffect(() => {
+    if (!localStorage.getItem(ADMIN_TOKEN_KEY)) {
+      router.replace("/admin/login");
+      return;
+    }
     Promise.all([getAdminDashboard(), getAdminClients()])
       .then(([dash, clientData]) => {
         setDashboard(dash);
         setClients(clientData.clients || []);
       })
+      .catch((err: unknown) => {
+        const code = (err as { response?: { status?: number } })?.response?.status;
+        if (code === 401 || code === 403) logout();
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [router, logout]);
 
   const filtered = useMemo(() => {
     let list = applyFilter(clients, filter);
@@ -99,9 +119,14 @@ export default function AdminPage() {
   return (
     <AppShell>
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="font-heading text-3xl font-bold text-dark">Admin Dashboard</h1>
-          <p className="font-body text-dark/60 mt-1">Sarvarasa platform overview</p>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-3xl font-bold text-dark">Admin Dashboard</h1>
+            <p className="font-body text-dark/60 mt-1">Sarvarasa platform overview</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={logout} className="shrink-0">
+            <LogOut className="w-4 h-4 mr-2" /> Logout
+          </Button>
         </motion.div>
 
         {/* Metrics Grid */}

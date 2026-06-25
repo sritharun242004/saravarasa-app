@@ -11,11 +11,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#F5F2EA",
-        espresso: "#2C1208",
+        // ── Organic / Natural palette — forest floor, clay, unbleached paper ──
+        background: "#FDFCF8", // Rice paper
+        espresso: "#2C2C24", // Deep loam (dark surfaces)
+        foreground: "#2C2C24",
         primary: {
+          // Brand green — preserved as the signature colour
           DEFAULT: "#1B6040",
-          foreground: "#FFFFFF",
+          foreground: "#F3F4F1",
           50: "#E6F2EB",
           100: "#BEDFC9",
           200: "#8ECAAB",
@@ -28,45 +31,52 @@ const config: Config = {
           900: "#031208",
         },
         secondary: {
-          DEFAULT: "#22C55E",
+          // Terracotta / clay — organic warm contrast
+          DEFAULT: "#C18C5D",
           foreground: "#FFFFFF",
         },
         accent: {
-          DEFAULT: "#1B3020",
+          // Moss green — positive / success tone (organic green companion)
+          DEFAULT: "#5D7052",
           foreground: "#FFFFFF",
-          50: "#E6EDE9",
-          100: "#BECEC5",
-          200: "#8EAD9E",
-          300: "#5E8C77",
-          400: "#377158",
-          500: "#1B3020",
-          600: "#15261A",
-          700: "#0F1C12",
-          800: "#09130C",
-          900: "#030906",
+          50: "#EEF0EC",
+          100: "#D6DCD1",
+          200: "#B7C1AE",
+          300: "#97A78B",
+          400: "#7A8C6E",
+          500: "#5D7052",
+          600: "#4A5A42",
+          700: "#384432",
+          800: "#262E22",
+          900: "#141811",
         },
-        dark: "#1E1E1E",
+        // Organic surface tones
+        sand: "#E6DCCD",
+        clay: "#C18C5D",
+        stone: "#F0EBE5",
+        timber: "#DED8CF",
+        dark: "#2C2C24", // Deep loam / charcoal
         card: {
-          DEFAULT: "#FFFFFF",
-          foreground: "#1E1E1E",
+          DEFAULT: "#FEFEFA",
+          foreground: "#2C2C24",
         },
-        success: "#22C55E",
+        success: "#5D7052",
         muted: {
-          DEFAULT: "#E8F5ED",
-          foreground: "#4B6D57",
+          DEFAULT: "#F0EBE5", // Stone
+          foreground: "#78786C", // Dried grass
         },
-        border: "#C0DBC9",
-        input: "#C0DBC9",
-        ring: "#1B6040",
+        border: "#DED8CF", // Raw timber
+        input: "#DED8CF",
+        ring: "#5D7052",
         destructive: {
-          DEFAULT: "#DC2626",
+          DEFAULT: "#A85448", // Burnt sienna
           foreground: "#FFFFFF",
         },
       },
       fontFamily: {
-        heading: ["Lora", "Georgia", "serif"],
-        body: ["Raleway", "system-ui", "sans-serif"],
-        sans: ["Raleway", "system-ui", "sans-serif"],
+        heading: ["Fraunces", "Georgia", "serif"],
+        body: ["Nunito", "system-ui", "sans-serif"],
+        sans: ["Nunito", "system-ui", "sans-serif"],
       },
       borderRadius: {
         lg: "0.75rem",
@@ -75,17 +85,21 @@ const config: Config = {
         xl: "1rem",
         "2xl": "1.5rem",
         "3xl": "2rem",
+        "4xl": "2.5rem",
+        "5xl": "4rem",
       },
       boxShadow: {
-        soft: "0 2px 15px rgba(27, 96, 64, 0.08)",
-        card: "0 4px 24px rgba(27, 96, 64, 0.10)",
-        elevated: "0 8px 40px rgba(27, 96, 64, 0.15)",
-        glow: "0 0 30px rgba(27, 96, 64, 0.20)",
+        // Soft, diffused, naturally-tinted shadows — never pure black
+        soft: "0 4px 20px -2px rgba(27, 96, 64, 0.15)", // green-tinted
+        card: "0 8px 30px -6px rgba(27, 96, 64, 0.12)",
+        float: "0 10px 40px -10px rgba(193, 140, 93, 0.22)", // clay-tinted
+        elevated: "0 20px 40px -10px rgba(27, 96, 64, 0.15)",
+        glow: "0 0 30px rgba(93, 112, 82, 0.20)",
       },
       backgroundImage: {
-        "warm-gradient": "linear-gradient(135deg, #F5F2EA 0%, #EAF5EE 100%)",
-        "card-gradient": "linear-gradient(135deg, #FFFFFF 0%, #F5F2EA 100%)",
-        "hero-pattern": "radial-gradient(circle at 20% 50%, rgba(27,96,64,0.08) 0%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(34,197,94,0.12) 0%, transparent 50%)",
+        "warm-gradient": "linear-gradient(135deg, #FDFCF8 0%, #F0EBE5 100%)",
+        "card-gradient": "linear-gradient(135deg, #FEFEFA 0%, #F5F1EA 100%)",
+        "hero-pattern": "radial-gradient(circle at 18% 40%, rgba(93,112,82,0.10) 0%, transparent 55%), radial-gradient(circle at 82% 18%, rgba(193,140,93,0.12) 0%, transparent 50%)",
       },
       animation: {
         "float": "float 6s ease-in-out infinite",

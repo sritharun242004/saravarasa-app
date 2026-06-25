@@ -21,6 +21,12 @@ class ClientStatus(str, enum.Enum):
     ENROLLED = "ENROLLED"
 
 
+class SexType(str, enum.Enum):
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
+
+
 class ChallengeBatch(Base):
     __tablename__ = "challenge_batches"
 
@@ -39,7 +45,8 @@ class Client(Base):
     id = Column(String, primary_key=True, default=gen_uuid)
     name = Column(String, nullable=False)
     age = Column(Integer, nullable=True)
-    gender = Column(String, nullable=True)
+    gender = Column(String, nullable=True)  # identity
+    sex = Column(String, nullable=True)  # biological sex: male, female, other
     height_cm = Column(Float, nullable=True)
     weight_kg = Column(Float, nullable=True)
     goal = Column(String, nullable=True)
@@ -49,6 +56,8 @@ class Client(Base):
     batch_id = Column(String, ForeignKey("challenge_batches.id"), nullable=True)
     status = Column(String, default=ClientStatus.ACTIVE)
     audit_completed = Column(Boolean, default=False)
+    profile_completed = Column(Boolean, default=False)
+    profile_updated_at = Column(DateTime(timezone=True), nullable=True)
     challenge_cycle = Column(Integer, default=1)  # 1 = first week, 2 = second chance
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
 

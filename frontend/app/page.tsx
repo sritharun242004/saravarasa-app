@@ -1,27 +1,27 @@
+import Image from "next/image";
 import { Navbar } from "@/components/layout/navbar";
-import { BottomNav } from "@/components/layout/bottom-nav";
-import { Hero } from "@/components/landing/hero";
-import { JourneyStages } from "@/components/landing/journey-stages";
-import { HowItWorks } from "@/components/landing/how-it-works";
-import { WhyDifferent } from "@/components/landing/why-different";
-import { Features } from "@/components/landing/features";
-import { CTASection } from "@/components/landing/cta-section";
+import { LandingHero } from "@/components/landing/landing-hero";
+import { Assessments } from "@/components/landing/assessments";
+import { LandingCTA } from "@/components/landing/landing-cta";
 
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pb-20 md:pb-0">
-        <Hero />
-        <JourneyStages />
-        <HowItWorks />
-        <WhyDifferent />
-        <Features />
-        <CTASection />
-        <footer className="bg-black text-white">
+      <main className="pb-0">
+        <LandingHero />
+        <Assessments />
+        <LandingCTA />
+        <footer className="bg-espresso text-white rounded-t-[3rem]">
           <div className="max-w-6xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-3 gap-10">
             <div className="space-y-4">
-              <p className="font-heading text-lg font-semibold text-white">SARVARASA</p>
+              <Image
+                src="/logo-in-light-colour.png"
+                alt="Sarvarasa"
+                width={200}
+                height={52}
+                className="h-9 w-auto object-contain"
+              />
               <p className="font-body text-sm text-white/60 leading-relaxed">
                 Commit to yourself, the rest will follow.
               </p>
@@ -83,7 +83,6 @@ export default function HomePage() {
           </div>
         </footer>
       </main>
-      <BottomNav />
     </div>
   );
 }

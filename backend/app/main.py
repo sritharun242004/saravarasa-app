@@ -8,7 +8,7 @@ from app.config import settings
 from app.database import init_db, AsyncSessionLocal
 from app.services.alias_seeder import seed_aliases
 from app.routes.onboarding import router as onboarding_router
-from app.routes.audit import router as audit_router
+from app.routes.audit_routes import router as audit_router
 from app.routes.challenge import router as challenge_router
 from app.routes.compliance import router as compliance_router
 from app.routes.reports import router as reports_router
@@ -16,6 +16,8 @@ from app.routes.admin import router as admin_router
 from app.routes.payment import router as payment_router
 from app.routes.foods import router as foods_router
 from app.routes.auth import router as auth_router
+from app.routes.profile import router as profile_router
+from app.routes.tests import router as tests_router
 
 
 @asynccontextmanager
@@ -54,6 +56,8 @@ app.include_router(admin_router)
 app.include_router(payment_router)
 app.include_router(foods_router)
 app.include_router(auth_router)
+app.include_router(profile_router)
+app.include_router(tests_router)
 
 
 @app.get("/health")

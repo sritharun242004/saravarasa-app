@@ -7,10 +7,12 @@ export const api = axios.create({
   timeout: 60000,
 });
 
-// Attach JWT token to every request when available
+// Attach the appropriate JWT to each request: admin token for /admin routes,
+// the regular user token otherwise.
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("sarvarasa_token");
+    const isAdminRoute = (config.url || "").startsWith("/admin");
+    const token = localStorage.getItem(isAdminRoute ? "sarvarasa_admin_token" : "sarvarasa_token");
     if (token) config.headers["Authorization"] = `Bearer ${token}`;
   }
   return config;
@@ -49,6 +51,78 @@ export async function login(email: string, password: string): Promise<AuthRespon
 
 export async function getMe(): Promise<AuthResponse & { phone?: string; age?: number; gender?: string; challenge_cycle?: number }> {
   const { data } = await api.get("/auth/me");
+  return data;
+}
+
+export async function exchangeCognitoCode(code: string, redirectUri: string): Promise<AuthResponse> {
+  const { data } = await api.post("/auth/cognito/exchange", { code, redirect_uri: redirectUri });
+  return data;
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+export interface Profile {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  sex?: string | null;
+  gender?: string | null;
+  age?: number | null;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  profile_completed: boolean;
+}
+
+export async function getProfile(clientId: string): Promise<Profile> {
+  const { data } = await api.get(`/profile/${clientId}`);
+  return data;
+}
+
+export interface ProfileUpdate {
+  name?: string;
+  email?: string;
+  phone?: string;
+  age?: number;
+  gender?: string;
+}
+
+export async function updateProfile(clientId: string, payload: ProfileUpdate): Promise<Profile> {
+  const { data } = await api.patch(`/profile/${clientId}`, payload);
+  return data;
+}
+
+// ─── Assessments: Tests (MCQ / Descriptive) ─────────────────────────────────────
+
+export interface TestQuestion {
+  id: string;
+  question_text: string;
+  options?: Record<string, string> | null;
+  test_type: string;
+}
+
+export interface TestStatus {
+  mcq_unlocked: boolean;
+  descriptive_unlocked: boolean;
+  mcq_completed?: boolean;
+  descriptive_completed?: boolean;
+  mcq_score?: number | null;
+  descriptive_score?: number | null;
+  compliance_pct: number;
+}
+
+export async function getTestStatus(clientId: string): Promise<TestStatus> {
+  const { data } = await api.get(`/tests/${clientId}/status`);
+  return data;
+}
+
+export async function getTestQuestions(clientId: string, testType: "MCQ" | "DESCRIPTIVE" = "DESCRIPTIVE"): Promise<TestQuestion[]> {
+  const { data } = await api.get(`/tests/${clientId}/questions`, { params: { test_type: testType } });
+  return data as TestQuestion[];
+}
+
+export async function submitDescriptive(clientId: string, answers: Record<string, string>): Promise<{ status: string; message: string }> {
+  const { data } = await api.post(`/tests/${clientId}/descriptive/submit`, { answers });
   return data;
 }
 
@@ -113,6 +187,47 @@ export interface AuditResponse {
 
 export async function saveAudit(payload: AuditPayload): Promise<AuditResponse> {
   const { data } = await api.post("/audit/save", payload);
+  return data;
+}
+
+// ─── Lifestyle Audit (Phase 2 — scored 35-question assessment) ──────────────────
+
+export interface AuditSubmitResult {
+  success: boolean;
+  score: number;
+  max_score: number;
+  zone: "Green" | "Yellow" | "Orange" | "Red";
+  message: string;
+  lowest_domain: string;
+  highest_domain: string;
+  priority_intervention: string;
+  critical_flags: string[];
+  bnys_review_required: boolean;
+}
+
+export interface AuditResult {
+  client_id: string;
+  total_score: number;
+  max_score: number;
+  zone: "Green" | "Yellow" | "Orange" | "Red";
+  lowest_domain: string;
+  highest_domain: string;
+  priority_intervention: string;
+  bnys_review_required: boolean;
+  domains: Record<string, number | null>;
+  completed_at: string;
+}
+
+export async function submitLifestyleAudit(
+  clientId: string,
+  responses: Record<string, unknown>,
+): Promise<AuditSubmitResult> {
+  const { data } = await api.post(`/audit/submit/${clientId}`, responses);
+  return data;
+}
+
+export async function getAuditResult(clientId: string): Promise<AuditResult> {
+  const { data } = await api.get(`/audit/result/${clientId}`);
   return data;
 }
 
@@ -315,6 +430,19 @@ export interface AdminClientDetail {
     outside_food_frequency: string;
     stress_level: string;
   } | null;
+  lifestyle_audit: {
+    total_score: number;
+    max_score: number;
+    zone: "Green" | "Yellow" | "Orange" | "Red";
+    lowest_domain: string;
+    highest_domain: string;
+    priority_intervention: string;
+    bnys_review_required: boolean;
+    baseline_labs_required: boolean;
+    critical_flags: string[];
+    domains: Record<string, number | null>;
+    completed_at: string;
+  } | null;
   compliance: {
     completed_days: number;
     compliance_pct: number;
@@ -350,6 +478,17 @@ export interface AdminClientDetail {
     cycle_unlocked: number;
     paid_at: string;
   }[];
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  email: string;
+  is_admin: boolean;
+}
+
+export async function adminLogin(email: string, password: string): Promise<AdminLoginResponse> {
+  const { data } = await api.post("/auth/admin/login", { email, password });
+  return data;
 }
 
 export async function getAdminDashboard(): Promise<AdminDashboard> {

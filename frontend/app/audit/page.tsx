@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
@@ -8,24 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/lib/use-toast";
-import { saveAudit } from "@/lib/api";
-import { ArrowRight, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { submitLifestyleAudit, type AuditSubmitResult } from "@/lib/api";
+import { ArrowRight, ArrowLeft, CheckCircle2, Loader2, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Question model ────────────────────────────────────────────────────────────
 
-type AuditData = Record<string, string | boolean | undefined>;
-
-interface OptionGroup {
-  label: string;
-  value: string;
-}
+type QType = "radio" | "scale" | "number" | "text";
 
 interface Question {
-  key: string;
+  id: string;            // q7..q35, or profile field name for Section A
   label: string;
-  type: "radio" | "boolean" | "text";
-  options?: OptionGroup[];
+  type: QType;
+  options?: { value: string; label: string }[];
+  optional?: boolean;
+  profile?: boolean;     // belongs to Section A (stored in section_a, not scored)
   placeholder?: string;
 }
 
@@ -37,19 +34,37 @@ interface Section {
   questions: Question[];
 }
 
-// ─── Sections ────────────────────────────────────────────────────────────────
+const opt = (...labels: string[]) =>
+  labels.map((label, i) => ({ value: String.fromCharCode(65 + i), label }));
+
+// ─── The 35-question Lifestyle Audit (Phase 2 spec) ─────────────────────────────
 
 const SECTIONS: Section[] = [
   {
     id: "profile",
     title: "Basic Profile",
     emoji: "👤",
-    description: "Tell us a little about your daily life.",
+    description: "A little context about your daily life. This part is not scored.",
     questions: [
-      { key: "city", label: "Which city do you live in?", type: "text", placeholder: "e.g. Chennai, Bangalore..." },
-      { key: "occupation", label: "What is your occupation?", type: "text", placeholder: "e.g. IT professional, homemaker..." },
+      { id: "name", label: "What is your full name?", type: "text", profile: true, placeholder: "Your full name" },
+      { id: "age", label: "How old are you?", type: "number", profile: true, placeholder: "18 – 70" },
+      { id: "occupation", label: "What is your occupation?", type: "text", profile: true, placeholder: "e.g. Software Engineer, Teacher" },
       {
-        key: "cooking_at_home", label: "Do you usually cook at home?", type: "boolean",
+        id: "work_type", label: "What best describes your work type?", type: "radio", profile: true,
+        options: opt(
+          "Desk-based — I sit at a computer most of the day",
+          "Mix — some desk work, some movement",
+          "Active — on my feet or moving most of the day",
+          "Shift work — my schedule changes regularly",
+        ),
+      },
+      {
+        id: "sitting_hours", label: "On a typical workday, how many hours do you spend sitting?", type: "radio", profile: true,
+        options: opt("Less than 4 hours", "4 to 6 hours", "6 to 8 hours", "More than 8 hours"),
+      },
+      {
+        id: "marital_status", label: "What is your marital status? (Optional)", type: "radio", profile: true, optional: true,
+        options: opt("Single", "Married", "Other / prefer not to say"),
       },
     ],
   },
@@ -57,219 +72,192 @@ const SECTIONS: Section[] = [
     id: "sleep",
     title: "Sleep Audit",
     emoji: "🌙",
-    description: "Sleep affects your food choices and hunger patterns.",
+    description: "Sleep shapes hunger, energy and recovery.",
     questions: [
-      {
-        key: "sleep_hours", label: "How many hours do you sleep per night?", type: "radio",
-        options: [
-          { label: "Less than 6 hours", value: "less_than_6" },
-          { label: "6–7 hours", value: "6_to_7" },
-          { label: "7–8 hours", value: "7_to_8" },
-          { label: "More than 8 hours", value: "more_than_8" },
-        ],
-      },
-      {
-        key: "sleep_quality", label: "How would you rate your sleep quality?", type: "radio",
-        options: [
-          { label: "Poor — I wake up tired", value: "poor" },
-          { label: "Average — okay most days", value: "average" },
-          { label: "Good — I feel rested", value: "good" },
-        ],
-      },
-      { key: "wake_time", label: "What time do you usually wake up?", type: "text", placeholder: "e.g. 6:30 AM" },
+      { id: "q7", label: "What time do you usually go to sleep on weeknights?", type: "radio",
+        options: opt("Before 10 PM", "10 PM to 11 PM", "11 PM to midnight", "Midnight to 1 AM", "After 1 AM") },
+      { id: "q8", label: "What time do you usually wake up?", type: "radio",
+        options: opt("Before 6 AM", "6 AM to 7 AM", "7 AM to 8 AM", "After 8 AM", "No fixed wake time — it depends") },
+      { id: "q9", label: "On most nights, how many hours of actual sleep do you get?", type: "radio",
+        options: opt("7 to 9 hours", "6 to 7 hours", "5 to 6 hours", "Less than 5 hours", "It varies a lot") },
+      { id: "q10", label: "When you wake up, how do you feel?", type: "radio",
+        options: opt("Rested and ready", "Groggy 10–15 min but okay after", "Tired — I want to sleep more", "Heavy and exhausted", "I never feel rested") },
+      { id: "q11", label: "What do you usually do in the last 30 minutes before sleeping?", type: "radio",
+        options: opt("Avoid screens — read, meditate, wind down", "Use phone occasionally but stop before sleep", "Scroll / watch until I feel sleepy", "On a screen right until I fall asleep", "I often fall asleep watching something") },
+      { id: "q12", label: "How often do you have difficulty falling asleep?", type: "radio",
+        options: opt("Never — I fall asleep easily", "Rarely — only occasionally", "Sometimes — a few nights a week", "Often — most nights", "Almost every night") },
     ],
   },
   {
-    id: "food_habits",
-    title: "Food Habits",
+    id: "food",
+    title: "Food & Eating Habits",
     emoji: "🍱",
-    description: "Help us understand your current eating patterns.",
+    description: "Your eating patterns and timing.",
     questions: [
-      {
-        key: "meals_per_day", label: "How many meals do you eat per day?", type: "radio",
-        options: [
-          { label: "1–2 meals", value: "1_to_2" },
-          { label: "3 meals", value: "3" },
-          { label: "4 or more meals", value: "4_or_more" },
-        ],
-      },
-      {
-        key: "breakfast_habit", label: "How often do you eat breakfast?", type: "radio",
-        options: [
-          { label: "Always", value: "always" },
-          { label: "Sometimes", value: "sometimes" },
-          { label: "Rarely", value: "rarely" },
-          { label: "Never — I skip it", value: "never" },
-        ],
-      },
-      {
-        key: "water_intake", label: "How much water do you drink daily?", type: "radio",
-        options: [
-          { label: "Less than 1 litre", value: "less_than_1L" },
-          { label: "1–2 litres", value: "1_to_2L" },
-          { label: "More than 2 litres", value: "more_than_2L" },
-        ],
-      },
-      {
-        key: "outside_food_frequency", label: "How often do you eat outside / order food?", type: "radio",
-        options: [
-          { label: "Daily", value: "daily" },
-          { label: "A few times a week", value: "few_times_week" },
-          { label: "Rarely", value: "rarely" },
-        ],
-      },
-      {
-        key: "sugary_beverage_frequency", label: "How often do you have sugary drinks (tea with sugar, cold drinks, juices)?", type: "radio",
-        options: [
-          { label: "Multiple times daily", value: "multiple_daily" },
-          { label: "Once a day", value: "once_daily" },
-          { label: "A few times a week", value: "few_times_week" },
-          { label: "Rarely", value: "rarely" },
-        ],
-      },
-      {
-        key: "processed_food_frequency", label: "How often do you eat packaged/processed snacks?", type: "radio",
-        options: [
-          { label: "Daily", value: "daily" },
-          { label: "A few times a week", value: "few_times_week" },
-          { label: "Rarely", value: "rarely" },
-        ],
-      },
+      { id: "q13", label: "How many proper meals do you eat on a typical weekday? (Not counting tea, coffee or small snacks)", type: "radio",
+        options: opt("3+ meals at roughly consistent times", "2 proper meals, fairly consistent", "2 proper meals but timing varies a lot", "1 proper meal most days", "I eat whenever I get time — no real pattern") },
+      { id: "q14", label: "Are your meal timings regular or irregular?", type: "radio",
+        options: opt("Very regular — same time every day", "Usually regular with occasional variation", "Irregular — shifts by hours depending on work", "Very irregular — no consistent timing at all") },
+      { id: "q15", label: "What time do you usually finish dinner?", type: "radio",
+        options: opt("Before 7:30 PM most days", "7:30 PM to 8:30 PM most days", "8:30 PM to 9:30 PM most days", "After 9:30 PM most days", "After 10:30 PM most days") },
+      { id: "q16", label: "How often do you eat junk or processed food in a typical week?", type: "radio",
+        options: opt("Rarely — once a month or less", "Occasionally — once or twice a week", "Often — 3 to 4 times a week", "Most days", "Almost every meal includes processed / outside food") },
+      { id: "q17", label: "How often do you eat after 9 PM or late at night?", type: "radio",
+        options: opt("Rarely — almost never", "Once or twice a week", "3 to 4 nights a week", "Most nights", "Every night") },
+      { id: "q18", label: "How would you describe your sugar cravings?", type: "radio",
+        options: opt("Low — I rarely crave sweets", "Moderate — I crave occasionally and can manage it", "High — I frequently crave and usually give in", "Very high — I need something sweet most days") },
+      { id: "q19", label: "Do you eat differently when you are stressed, bored or upset?", type: "radio",
+        options: opt("No — not strongly linked to my mood", "Sometimes — minor changes when stressed", "Often — I eat more or reach for specific foods", "Yes — food is my primary way of managing emotions") },
+      { id: "q20", label: "How much water do you drink in a typical day?", type: "radio",
+        options: opt("2 litres or more", "1 to 2 litres", "Less than 1 litre", "I am not sure — I do not track it") },
     ],
   },
   {
     id: "movement",
-    title: "Movement",
+    title: "Movement & Activity",
     emoji: "🏃",
-    description: "Physical activity and movement patterns.",
+    description: "How much you move through the day.",
     questions: [
-      {
-        key: "activity_level", label: "How would you describe your general activity level?", type: "radio",
-        options: [
-          { label: "Sedentary — mostly sitting all day", value: "sedentary" },
-          { label: "Lightly active — some walking", value: "lightly_active" },
-          { label: "Moderately active — regular movement", value: "moderately_active" },
-          { label: "Very active — physical work or daily exercise", value: "very_active" },
-        ],
-      },
-      {
-        key: "exercise_frequency", label: "How often do you exercise or work out?", type: "radio",
-        options: [
-          { label: "Never", value: "never" },
-          { label: "1–2 times a week", value: "1_to_2_week" },
-          { label: "3–5 times a week", value: "3_to_5_week" },
-          { label: "Daily", value: "daily" },
-        ],
-      },
+      { id: "q21", label: "How many days per week do you do any intentional physical activity? (Walking, exercise, yoga, sports)", type: "radio",
+        options: opt("5 or more days", "3 to 4 days", "1 to 2 days", "Less than once a week", "I do not do any intentional physical activity") },
+      { id: "q22", label: "On a typical day, how much do you walk in total?", type: "radio",
+        options: opt("More than 30 minutes of walking", "15 to 30 minutes", "Less than 15 minutes", "Minimal — vehicles or lifts for almost everything") },
+      { id: "q23", label: "How long do you sit continuously without getting up on a typical workday?", type: "radio",
+        options: opt("Rarely more than 1 hour without moving", "1 to 2 hours at a stretch sometimes", "2 to 3 hours regularly without a break", "3 to 4 hours without getting up", "4 or more hours without getting up") },
+      { id: "q24", label: "Do you experience any regular body pain or stiffness?", type: "radio",
+        options: opt("No — my body feels fine generally", "Occasional minor stiffness — usually mornings", "Regular lower back or neck pain from sitting", "Daily pain or stiffness that affects how I move") },
+      { id: "q25", label: "How would you describe your energy levels during the day?", type: "radio",
+        options: opt("Consistently good — no significant dips", "Good in morning, slight afternoon dip", "Noticeable afternoon crash — need tea/coffee", "Low energy most of the day", "Exhausted most of the day regardless of sleep") },
     ],
   },
   {
     id: "stress",
-    title: "Stress",
+    title: "Stress & Emotional Health",
     emoji: "🧘",
-    description: "Stress has a strong connection with eating patterns.",
+    description: "Stress is closely tied to eating and recovery.",
     questions: [
-      {
-        key: "stress_level", label: "How would you rate your average stress level?", type: "radio",
-        options: [
-          { label: "Low — generally calm", value: "low" },
-          { label: "Moderate — some daily stress", value: "moderate" },
-          { label: "High — frequently stressed", value: "high" },
-        ],
-      },
-      {
-        key: "stress_eating", label: "Do you tend to eat more when stressed?", type: "radio",
-        options: [
-          { label: "Yes, definitely", value: "yes" },
-          { label: "Sometimes", value: "sometimes" },
-          { label: "No, stress reduces my appetite", value: "no" },
-        ],
-      },
+      { id: "q26", label: "On a scale of 1 to 10, how would you rate your current stress level? (1 = very low, 10 = overwhelming)", type: "scale" },
+      { id: "q27", label: "What is your biggest source of stress right now?", type: "radio",
+        options: opt("Work pressure — deadlines, performance, relationships at work", "Family or relationship situations", "Financial concerns", "Health concerns — my own or someone close", "Multiple areas simultaneously", "I am not under significant stress right now") },
+      { id: "q28", label: "How often does your mood or emotional state fluctuate significantly during the day?", type: "radio",
+        options: opt("Rarely — I am generally emotionally steady", "Occasionally — minor fluctuations", "Often — significant shifts most days", "Very often — unpredictable and hard to manage") },
+      { id: "q29", label: "What is your primary motivation for joining this program?", type: "radio",
+        options: opt("A specific health concern or doctor's advice", "I want to lose weight and feel better in my body", "I want more energy and better daily function", "I want to build sustainable habits before problems start", "Someone I know recommended it") },
+      { id: "q30", label: "What has been your biggest challenge in maintaining healthy habits in the past?", type: "radio",
+        options: opt("I do not have enough time", "I start but cannot stay consistent", "I lack support or accountability", "I find healthy food difficult to access or prepare", "Stress and emotional state derail me", "I have not seriously tried before") },
     ],
   },
   {
     id: "digestion",
-    title: "Digestive Health",
+    title: "Digestive & Functional Health",
     emoji: "🫁",
-    description: "Digestive health reflects your overall food relationship.",
+    description: "Digestion is a direct signal of metabolic function.",
     questions: [
-      {
-        key: "bowel_regularity", label: "How regular are your bowel movements?", type: "radio",
-        options: [
-          { label: "Regular — once or twice daily", value: "regular" },
-          { label: "Irregular — varies a lot", value: "irregular" },
-        ],
-      },
-      {
-        key: "digestion_issues", label: "Do you experience digestive discomfort (bloating, acidity, constipation)?", type: "boolean",
-      },
-      { key: "digestion_notes", label: "Any specific digestive concerns? (optional)", type: "text", placeholder: "Describe if any..." },
-      { key: "health_goals", label: "What health goal matters most to you right now?", type: "text", placeholder: "e.g. More energy, better sleep, reduce bloating..." },
-      { key: "dietary_restrictions", label: "Any dietary restrictions or food allergies? (optional)", type: "text", placeholder: "e.g. Vegetarian, lactose intolerant..." },
+      { id: "q31", label: "How often do you experience bloating or fullness and discomfort after meals?", type: "radio",
+        options: opt("Rarely — only when I eat something unusual", "Occasionally — once or twice a week", "Often — several times a week", "Most days", "Almost every meal") },
+      { id: "q32", label: "How would you describe your bowel movement pattern?", type: "radio",
+        options: opt("Regular — once a day at roughly the same time", "Mostly regular — once a day but timing varies", "Once every 2 days or less frequently", "Irregular — I cannot predict when", "Constipation is a persistent concern for me") },
+      { id: "q33", label: "How often do you experience acidity, heartburn or a burning sensation in your chest or stomach?", type: "radio",
+        options: opt("Never or very rarely", "Once or twice a month", "Once or twice a week", "Most days", "Multiple times per day") },
+      { id: "q34", label: "How would you describe your appetite?", type: "radio",
+        options: opt("Consistent — hungry at regular times, stop when full", "Slightly variable — some days hungrier than others", "Unpredictable — my hunger fluctuates significantly", "I rarely feel genuinely hungry — I eat by habit", "I frequently overeat past the point of fullness") },
+      { id: "q35", label: "How do you feel in the 30 to 60 minutes after a typical meal?", type: "radio",
+        options: opt("Light and energised", "Neutral — neither energised nor heavy", "A little heavy or sluggish but it passes", "Heavy and tired — I often want to rest", "Very heavy and uncomfortable — almost every meal") },
     ],
   },
 ];
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 const CLIENT_ID_KEY = "sarvarasa_client_id";
+const CLIENT_NAME_KEY = "sarvarasa_client_name";
 
-function getClientId(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(CLIENT_ID_KEY) || "";
-}
+type AnswerMap = Record<string, string>;
+
+const ZONE_STYLES: Record<string, { ring: string; text: string; bg: string; emoji: string }> = {
+  Green:  { ring: "border-accent/40",       text: "text-accent",      bg: "bg-accent/5",      emoji: "🟢" },
+  Yellow: { ring: "border-yellow-400/50",   text: "text-yellow-600",  bg: "bg-yellow-50",     emoji: "🟡" },
+  Orange: { ring: "border-orange-400/50",   text: "text-orange-600",  bg: "bg-orange-50",     emoji: "🟠" },
+  Red:    { ring: "border-destructive/40",  text: "text-destructive", bg: "bg-destructive/5", emoji: "🔴" },
+};
 
 export default function AuditPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [sectionIdx, setSectionIdx] = useState(0);
-  const [data, setData] = useState<AuditData>({});
-  const [saving, setSaving] = useState(false);
+  const [answers, setAnswers] = useState<AnswerMap>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<AuditSubmitResult | null>(null);
+
+  const clientId = typeof window !== "undefined" ? localStorage.getItem(CLIENT_ID_KEY) || "" : "";
+
+  // Prefill name from the signed-in account.
+  useEffect(() => {
+    const name = typeof window !== "undefined" ? localStorage.getItem(CLIENT_NAME_KEY) : "";
+    if (name) setAnswers((a) => ({ ...a, name: a.name || name }));
+  }, []);
+
+  useEffect(() => {
+    if (!clientId) router.push("/login");
+  }, [clientId, router]);
 
   const totalSections = SECTIONS.length;
   const section = SECTIONS[sectionIdx];
-  const progress = Math.round(((sectionIdx) / totalSections) * 100);
+  const progress = Math.round(((sectionIdx + 1) / totalSections) * 100);
 
-  const setValue = (key: string, value: string | boolean) => {
-    setData((prev) => ({ ...prev, [key]: value }));
+  const setValue = (id: string, value: string) => setAnswers((p) => ({ ...p, [id]: value }));
+
+  const sectionComplete = section.questions.every(
+    (q) => q.optional || (answers[q.id] !== undefined && answers[q.id] !== ""),
+  );
+
+  const buildResponses = (): Record<string, unknown> => {
+    const section_a: Record<string, unknown> = {};
+    const out: Record<string, unknown> = {};
+    for (const s of SECTIONS) {
+      for (const q of s.questions) {
+        const val = answers[q.id];
+        if (val === undefined || val === "") continue;
+        if (q.profile) {
+          section_a[q.id] = q.id === "age" ? Number(val) : val;
+        } else {
+          out[q.id] = val;
+        }
+      }
+    }
+    out.section_a = section_a;
+    // Context aliases the evaluation engine expects.
+    out.q27_text = answers.q27 || "";
+    out.q29_text = answers.q29 || "";
+    out.q30_selection = answers.q30 || "";
+    return out;
   };
 
-  const autoSave = useCallback(async (payload: AuditData) => {
-    const clientId = getClientId();
-    if (!clientId) return;
-    setSaving(true);
-    try {
-      await saveAudit({ client_id: clientId, ...payload, completed: false });
-    } catch {
-      // silent auto-save
-    } finally {
-      setSaving(false);
-    }
-  }, []);
-
   const goNext = async () => {
-    await autoSave(data);
+    if (!sectionComplete) {
+      toast({ title: "Please answer all questions on this screen", variant: "destructive" });
+      return;
+    }
     if (sectionIdx < totalSections - 1) {
       setSectionIdx((i) => i + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      // Final submit
-      const clientId = getClientId();
-      if (!clientId) {
-        toast({ title: "Not registered", description: "Please register before completing the audit.", variant: "destructive" });
-        router.push("/onboarding");
-        return;
-      }
-      setSaving(true);
-      try {
-        await saveAudit({ client_id: clientId, ...data, completed: true });
-        toast({ title: "Audit complete!", description: "Your 7-day challenge is now unlocked." });
-        router.push("/challenge");
-      } catch {
-        toast({ title: "Error", description: "Could not save audit. Please try again.", variant: "destructive" });
-      } finally {
-        setSaving(false);
-      }
+      return;
+    }
+    // Final submit
+    if (!clientId) {
+      router.push("/login");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await submitLifestyleAudit(clientId, buildResponses());
+      setResult(res);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        "Could not submit your audit. Please try again.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -282,36 +270,104 @@ export default function AuditPage() {
 
   const isLastSection = sectionIdx === totalSections - 1;
 
+  // ─── Results screen ──────────────────────────────────────────────────────────
+  if (result) {
+    const z = ZONE_STYLES[result.zone] || ZONE_STYLES.Yellow;
+    const pct = Math.round((result.score / result.max_score) * 100);
+    return (
+      <AppShell>
+        <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Trophy className="w-8 h-8 text-primary" />
+            </div>
+            <h1 className="font-heading text-3xl font-bold text-dark">Your Lifestyle Audit Result</h1>
+            <p className="font-body text-dark/60 mt-1">Based on your 35 answers across 5 health domains.</p>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.05 }}>
+            <Card className={cn("border-2", z.ring, z.bg)}>
+              <CardContent className="p-8 text-center">
+                <div className="text-5xl mb-3">{z.emoji}</div>
+                <p className={cn("font-heading text-2xl font-bold mb-1", z.text)}>{result.zone} Zone</p>
+                <p className="font-heading text-5xl font-bold text-dark mt-4">
+                  {result.score}
+                  <span className="text-2xl text-dark/40 font-body"> / {result.max_score}</span>
+                </p>
+                <div className="mt-4">
+                  <Progress value={pct} className="h-3" />
+                  <p className="font-body text-xs text-dark/50 mt-2">{pct}% lifestyle score</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <Card>
+              <CardContent className="p-6">
+                <p className="font-body text-dark/80 leading-relaxed">{result.message}</p>
+                <div className="grid grid-cols-2 gap-3 mt-5">
+                  <div className="rounded-xl bg-muted/50 p-3">
+                    <p className="font-body text-xs text-dark/40">Strongest area</p>
+                    <p className="font-body text-sm font-semibold text-dark">{result.highest_domain}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/50 p-3">
+                    <p className="font-body text-xs text-dark/40">Focus area</p>
+                    <p className="font-body text-sm font-semibold text-dark">{result.lowest_domain}</p>
+                  </div>
+                </div>
+                {result.bnys_review_required && (
+                  <div className="mt-4 p-3 rounded-xl bg-primary/5 border border-primary/20">
+                    <p className="font-body text-sm text-dark/70">
+                      One of our clinical team members will reach out to understand your situation personally before
+                      designing your program.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={() => router.push("/profile")}>
+              View Profile
+            </Button>
+            <Button className="flex-1" onClick={() => router.push("/descriptive-test")}>
+              Next Assessment <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // ─── Question wizard ─────────────────────────────────────────────────────────
   return (
     <AppShell>
       <div className="min-h-screen px-4 py-8 max-w-2xl mx-auto">
-        {/* Header */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <h1 className="font-heading text-3xl font-bold text-dark">Lifestyle Audit</h1>
-          <p className="font-body text-dark/60 mt-1">Help us understand your current lifestyle before the challenge.</p>
+          <p className="font-body text-dark/60 mt-1">
+            A picture of your life right now. Answer based on what actually happens — there are no wrong answers.
+          </p>
         </motion.div>
 
-        {/* Progress */}
         <div className="mb-8">
           <div className="flex justify-between text-xs font-body text-dark/50 mb-2">
             <span>Section {sectionIdx + 1} of {totalSections}</span>
-            <span>{saving ? "Saving…" : `${progress}% complete`}</span>
+            <span>{progress}% complete</span>
           </div>
-          <Progress value={progress + (100 / totalSections)} className="h-2" />
+          <Progress value={progress} className="h-2" />
           <div className="flex gap-1 mt-3">
             {SECTIONS.map((s, i) => (
-              <div
-                key={s.id}
-                className={cn(
-                  "flex-1 h-1 rounded-full transition-colors duration-300",
-                  i < sectionIdx ? "bg-primary" : i === sectionIdx ? "bg-primary/50" : "bg-muted"
-                )}
-              />
+              <div key={s.id} className={cn(
+                "flex-1 h-1 rounded-full transition-colors duration-300",
+                i < sectionIdx ? "bg-primary" : i === sectionIdx ? "bg-primary/50" : "bg-muted",
+              )} />
             ))}
           </div>
         </div>
 
-        {/* Section Card */}
         <AnimatePresence mode="wait">
           <motion.div
             key={section.id}
@@ -332,67 +388,78 @@ export default function AuditPage() {
                   </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-7">
                   {section.questions.map((q) => (
-                    <div key={q.key}>
+                    <div key={q.id}>
                       <label className="block font-body text-sm font-medium text-dark mb-3">{q.label}</label>
 
                       {q.type === "radio" && q.options && (
                         <div className="grid grid-cols-1 gap-2">
-                          {q.options.map((opt) => (
+                          {q.options.map((o) => (
                             <button
-                              key={opt.value}
+                              key={o.value}
                               type="button"
-                              onClick={() => setValue(q.key, opt.value)}
+                              onClick={() => setValue(q.id, o.value)}
                               className={cn(
                                 "w-full text-left px-4 py-3 rounded-xl border font-body text-sm transition-all duration-200",
-                                data[q.key] === opt.value
+                                answers[q.id] === o.value
                                   ? "border-primary bg-primary/5 text-dark font-medium"
-                                  : "border-border bg-card text-dark/70 hover:border-primary/40"
+                                  : "border-border bg-card text-dark/70 hover:border-primary/40",
                               )}
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2.5">
                                 <div className={cn(
                                   "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                                  data[q.key] === opt.value ? "border-primary" : "border-dark/20"
+                                  answers[q.id] === o.value ? "border-primary" : "border-dark/20",
                                 )}>
-                                  {data[q.key] === opt.value && (
-                                    <div className="w-2 h-2 rounded-full bg-primary" />
-                                  )}
+                                  {answers[q.id] === o.value && <div className="w-2 h-2 rounded-full bg-primary" />}
                                 </div>
-                                {opt.label}
+                                {o.label}
                               </div>
                             </button>
                           ))}
                         </div>
                       )}
 
-                      {q.type === "boolean" && (
-                        <div className="flex gap-3">
-                          {[{ label: "Yes", value: true }, { label: "No", value: false }].map((opt) => (
+                      {q.type === "scale" && (
+                        <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
+                          {Array.from({ length: 10 }, (_, i) => String(i + 1)).map((n) => (
                             <button
-                              key={String(opt.value)}
+                              key={n}
                               type="button"
-                              onClick={() => setValue(q.key, opt.value)}
+                              onClick={() => setValue(q.id, n)}
                               className={cn(
-                                "flex-1 py-3 rounded-xl border font-body text-sm font-medium transition-all duration-200",
-                                data[q.key] === opt.value
-                                  ? "border-primary bg-primary/5 text-primary"
-                                  : "border-border bg-card text-dark/70 hover:border-primary/40"
+                                "py-3 rounded-xl border font-body text-sm font-semibold transition-all duration-200",
+                                answers[q.id] === n
+                                  ? "border-primary bg-primary text-white"
+                                  : "border-border bg-card text-dark/70 hover:border-primary/40",
                               )}
                             >
-                              {opt.label}
+                              {n}
                             </button>
                           ))}
                         </div>
+                      )}
+
+                      {q.type === "number" && (
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={18}
+                          max={70}
+                          placeholder={q.placeholder}
+                          value={answers[q.id] || ""}
+                          onChange={(e) => setValue(q.id, e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-border bg-card font-body text-sm text-dark placeholder:text-dark/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        />
                       )}
 
                       {q.type === "text" && (
                         <input
                           type="text"
                           placeholder={q.placeholder}
-                          value={(data[q.key] as string) || ""}
-                          onChange={(e) => setValue(q.key, e.target.value)}
+                          value={answers[q.id] || ""}
+                          onChange={(e) => setValue(q.id, e.target.value)}
                           className="w-full px-4 py-3 rounded-xl border border-border bg-card font-body text-sm text-dark placeholder:text-dark/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                         />
                       )}
@@ -404,32 +471,22 @@ export default function AuditPage() {
           </motion.div>
         </AnimatePresence>
 
-        {/* Navigation */}
         <div className="flex gap-3">
           {sectionIdx > 0 && (
-            <Button variant="outline" onClick={goBack} className="flex-1">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+            <Button variant="outline" onClick={goBack} className="flex-1" disabled={submitting}>
+              <ArrowLeft className="w-4 h-4 mr-2" /> Back
             </Button>
           )}
-          <Button onClick={goNext} disabled={saving} className="flex-1">
-            {isLastSection ? (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Complete Audit & Start Challenge
-              </>
+          <Button onClick={goNext} disabled={submitting} className="flex-1">
+            {submitting ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scoring…</>
+            ) : isLastSection ? (
+              <><CheckCircle2 className="w-4 h-4 mr-2" />Submit & See My Result</>
             ) : (
-              <>
-                Next
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </>
+              <>Next <ArrowRight className="w-4 h-4 ml-2" /></>
             )}
           </Button>
         </div>
-
-        <p className="font-body text-xs text-dark/40 text-center mt-4">
-          Progress is auto-saved. You can return and continue anytime.
-        </p>
       </div>
     </AppShell>
   );

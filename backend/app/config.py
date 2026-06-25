@@ -16,6 +16,21 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = "dev_secret"
 
+    # ─── Admin console credentials (sourced from env — never hardcode) ───────
+    admin_email: str = ""
+    admin_password: str = ""
+
+    # ─── AWS Cognito + Google OAuth ──────────────────────────────────────────
+    # All values come from the environment — never hardcode secrets here.
+    cognito_region: str = "eu-north-1"
+    cognito_user_pool_id: str = ""          # e.g. eu-north-1_bLTFnMCcW
+    cognito_domain: str = ""                # e.g. https://<prefix>.auth.<region>.amazoncognito.com
+    cognito_app_client_id: str = ""         # Cognito User Pool app-client ID (NOT the Google client id)
+    cognito_app_client_secret: str = ""     # only if the app client was created with a secret
+    google_client_id: str = ""              # Google OAuth client id federated into Cognito
+    oauth_redirect_uri: str = "http://localhost:3000/auth/callback"  # app callback (allowed in Cognito)
+    frontend_url: str = "http://localhost:3000"
+
     class Config:
         env_file = ".env"
         extra = "ignore"
