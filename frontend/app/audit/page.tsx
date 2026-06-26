@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/lib/use-toast";
-import { submitLifestyleAudit, type AuditSubmitResult } from "@/lib/api";
+import { submitLifestyleAudit, getAuditResult, type AuditSubmitResult } from "@/lib/api";
 import { ArrowRight, ArrowLeft, CheckCircle2, Loader2, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -179,6 +179,13 @@ const ZONE_STYLES: Record<string, { ring: string; text: string; bg: string; emoj
   Red:    { ring: "border-destructive/40",  text: "text-destructive", bg: "bg-destructive/5", emoji: "🔴" },
 };
 
+const ZONE_MESSAGES: Record<string, string> = {
+  Green: "Your lifestyle is working for you in most areas. The program will sharpen what is already good and build on a strong foundation.",
+  Yellow: "Your lifestyle has been drifting — not dramatically, but consistently. The good news is that drifting is reversible faster than it accumulated.",
+  Orange: "Several areas of your lifestyle are working against your health at the same time. This is the most common pattern we see, and the one that responds most to structured intervention.",
+  Red: "Your results show your body has been under sustained pressure for some time. We are glad you are here — one of our clinical team will reach out to understand your situation personally.",
+};
+
 export default function AuditPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -186,6 +193,8 @@ export default function AuditPage() {
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<AuditSubmitResult | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [alreadyDone, setAlreadyDone] = useState(false);
 
   const clientId = typeof window !== "undefined" ? localStorage.getItem(CLIENT_ID_KEY) || "" : "";
 
@@ -195,8 +204,32 @@ export default function AuditPage() {
     if (name) setAnswers((a) => ({ ...a, name: a.name || name }));
   }, []);
 
+  // If the audit is already completed, show the saved result (read-only) — no retake.
   useEffect(() => {
-    if (!clientId) router.push("/login");
+    if (!clientId) {
+      router.push("/login");
+      return;
+    }
+    getAuditResult(clientId)
+      .then((r) => {
+        setResult({
+          success: true,
+          score: r.total_score,
+          max_score: r.max_score,
+          zone: r.zone,
+          message: ZONE_MESSAGES[r.zone] || "",
+          lowest_domain: r.lowest_domain,
+          highest_domain: r.highest_domain,
+          priority_intervention: r.priority_intervention,
+          critical_flags: [],
+          bnys_review_required: r.bnys_review_required,
+        });
+        setAlreadyDone(true);
+      })
+      .catch(() => {
+        /* no prior result — show the questionnaire */
+      })
+      .finally(() => setChecking(false));
   }, [clientId, router]);
 
   const totalSections = SECTIONS.length;
@@ -270,6 +303,17 @@ export default function AuditPage() {
 
   const isLastSection = sectionIdx === totalSections - 1;
 
+  // ─── Checking for an existing result ────────────────────────────────────────
+  if (checking) {
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-6 h-6 text-primary animate-spin" />
+        </div>
+      </AppShell>
+    );
+  }
+
   // ─── Results screen ──────────────────────────────────────────────────────────
   if (result) {
     const z = ZONE_STYLES[result.zone] || ZONE_STYLES.Yellow;
@@ -282,7 +326,11 @@ export default function AuditPage() {
               <Trophy className="w-8 h-8 text-primary" />
             </div>
             <h1 className="font-heading text-3xl font-bold text-dark">Your Lifestyle Audit Result</h1>
-            <p className="font-body text-dark/60 mt-1">Based on your 35 answers across 5 health domains.</p>
+            <p className="font-body text-dark/60 mt-1">
+              {alreadyDone
+                ? "You've already completed this assessment — here's your result."
+                : "Based on your 35 answers across 5 health domains."}
+            </p>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.05 }}>

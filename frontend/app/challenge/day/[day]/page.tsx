@@ -11,6 +11,7 @@ import { AddFoodDialog } from "@/components/challenge/add-food-dialog";
 import { useToast } from "@/lib/use-toast";
 import {
   getDayMeals,
+  getChallengeProgress,
   submitMealStructured,
   type DayMeals,
   type MealEntry as ApiMealEntry,
@@ -26,6 +27,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Images,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -67,7 +69,8 @@ function MealForm({
   onSubmitted: (type: string) => void;
 }) {
   const { toast } = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
 
   // Restore previously saved structured foods from the existing meal entry
   const existingStructuredFoods: StructuredFood[] = (existing?.foods ?? []).map((f) => ({
@@ -186,12 +189,12 @@ function MealForm({
           <h3 className="font-heading text-base font-semibold text-dark">{info.label}</h3>
         </div>
 
-        {/* Image Upload */}
+        {/* Image Upload — supports both live camera and gallery */}
         <div>
           <div
             onDrop={handleDrop}
             onDragOver={(e) => e.preventDefault()}
-            onClick={() => fileRef.current?.click()}
+            onClick={() => galleryRef.current?.click()}
             className={cn(
               "relative cursor-pointer rounded-xl border-2 border-dashed transition-colors overflow-hidden",
               imageDisplayUrl
@@ -209,19 +212,49 @@ function MealForm({
             ) : (
               <div className="flex flex-col items-center justify-center h-28 gap-2">
                 <Upload className="w-6 h-6 text-destructive/50" />
-                <p className="font-body text-sm text-destructive/70 font-medium">Tap to upload a photo</p>
-                <p className="font-body text-xs text-destructive/50">Photo is required to save</p>
+                <p className="font-body text-sm text-destructive/70 font-medium">Add a meal photo</p>
+                <p className="font-body text-xs text-destructive/50">Take a photo or choose from gallery</p>
               </div>
             )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-            />
           </div>
+
+          {/* Camera (live) + Gallery actions */}
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => cameraRef.current?.click()}
+            >
+              <Camera className="w-4 h-4 mr-1.5" /> Camera
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => galleryRef.current?.click()}
+            >
+              <Images className="w-4 h-4 mr-1.5" /> Gallery
+            </Button>
+          </div>
+
+          {/* Hidden inputs: camera capture opens the device camera; gallery opens the picker */}
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+          <input
+            ref={galleryRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+
           {!imageDisplayUrl && (
             <p className="font-body text-xs text-destructive/70 mt-1.5 flex items-center gap-1">
               <span className="font-semibold">⚠</span> A meal photo is required before saving
@@ -329,8 +362,22 @@ export default function DayPage() {
   useEffect(() => {
     if (!clientId) { router.push("/onboarding"); return; }
     if (isNaN(dayNumber) || dayNumber < 1 || dayNumber > 7) { router.push("/challenge"); return; }
-    getDayMeals(clientId, dayNumber)
+    // Once the 7-day challenge is finished, logging is closed — send users to the results page.
+    getChallengeProgress(clientId)
+      .then((prog) => {
+        const completed = prog.days_detail
+          ? Object.values(prog.days_detail).filter((types) =>
+              ["BREAKFAST", "LUNCH", "DINNER"].every((t) => (types as string[]).includes(t))
+            ).length
+          : 0;
+        if (completed >= 7 || (prog.current_day || 1) > 7) {
+          router.replace("/challenge");
+          return null;
+        }
+        return getDayMeals(clientId, dayNumber);
+      })
       .then((data) => {
+        if (!data) return;
         setDayMeals(data);
         const done = new Set(data.meals.map((m) => m.meal_type));
         setSubmittedTypes(done);

@@ -11,7 +11,7 @@ import { useToast } from "@/lib/use-toast";
 import { login } from "@/lib/api";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { isCognitoConfigured } from "@/lib/cognito";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
@@ -24,6 +24,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
 
   const set = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val }));
@@ -97,14 +98,24 @@ export default function LoginPage() {
                   <label className="block font-body text-sm font-medium text-dark mb-2">
                     Password <span className="text-destructive">*</span>
                   </label>
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => set("password", e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className={inputCls}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPw ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => set("password", e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className={`${inputCls} pr-12`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((s) => !s)}
+                      aria-label={showPw ? "Hide password" : "Show password"}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-dark"
+                    >
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <Button

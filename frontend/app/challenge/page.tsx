@@ -22,17 +22,18 @@ const MEAL_ICONS: Record<string, string> = {
   SNACK: "🍎",
 };
 
-function DayCard({ day, completedDays, currentDay }: { day: number; completedDays: number[]; currentDay: number }) {
+function DayCard({ day, completedDays, currentDay, locked }: { day: number; completedDays: number[]; currentDay: number; locked?: boolean }) {
   const isComplete = completedDays.includes(day);
   const isCurrent = day === currentDay;
   const isPast = day < currentDay;
 
   const cardContent = (
     <motion.div
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
+      whileHover={locked ? undefined : { scale: 1.02 }}
+      whileTap={locked ? undefined : { scale: 0.98 }}
       className={cn(
-        "rounded-2xl border p-4 transition-all duration-200 cursor-pointer",
+        "rounded-2xl border p-4 transition-all duration-200",
+        locked ? "cursor-default" : "cursor-pointer",
         isComplete ? "border-green-200 bg-green-50" :
         isCurrent ? "border-blue-300 bg-blue-50 ring-1 ring-blue-200" :
         "border-gray-200 bg-white hover:border-gray-300"
@@ -59,7 +60,7 @@ function DayCard({ day, completedDays, currentDay }: { day: number; completedDay
           />
         ))}
       </div>
-      {isCurrent && (
+      {isCurrent && !locked && (
         <p className="font-body text-xs text-blue-600 font-medium mt-2">→ Log meals</p>
       )}
       {isPast && !isComplete && (
@@ -68,6 +69,8 @@ function DayCard({ day, completedDays, currentDay }: { day: number; completedDay
     </motion.div>
   );
 
+  // Once the challenge is complete, days are view-only (no re-logging).
+  if (locked) return cardContent;
   return <Link href={`/challenge/day/${day}`}>{cardContent}</Link>;
 }
 
@@ -211,7 +214,7 @@ export default function ChallengePage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-              <DayCard key={day} day={day} completedDays={completedDays} currentDay={currentDay} />
+              <DayCard key={day} day={day} completedDays={completedDays} currentDay={currentDay} locked={challengeComplete} />
             ))}
           </div>
         </motion.div>

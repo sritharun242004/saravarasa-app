@@ -245,17 +245,27 @@ export default function SignupPage() {
                   <label className="block font-body text-sm font-medium text-dark mb-2">
                     Confirm Password <span className="text-destructive">*</span>
                   </label>
-                  <input
-                    id="signup-confirm"
-                    type={showPw ? "text" : "password"}
-                    value={form.confirm}
-                    onChange={(e) => set("confirm", e.target.value)}
-                    placeholder="Re-enter your password"
-                    autoComplete="new-password"
-                    aria-invalid={!!errors.confirm}
-                    required
-                    className={cls("confirm")}
-                  />
+                  <div className="relative">
+                    <input
+                      id="signup-confirm"
+                      type={showPw ? "text" : "password"}
+                      value={form.confirm}
+                      onChange={(e) => set("confirm", e.target.value)}
+                      placeholder="Re-enter your password"
+                      autoComplete="new-password"
+                      aria-invalid={!!errors.confirm}
+                      required
+                      className={cls("confirm", "pr-12")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((s) => !s)}
+                      aria-label={showPw ? "Hide password" : "Show password"}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-dark"
+                    >
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   <ErrMsg field="confirm" />
                 </div>
 
