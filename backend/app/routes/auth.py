@@ -2,12 +2,20 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.config import settings
 from app.models.client import Client
 from app.core.security import hash_password, verify_password, create_token, decode_token
+from app.core.validation import (
+    normalize_email,
+    validate_email_deliverable,
+    normalize_phone,
+    validate_password,
+    validate_name,
+)
 from app.core.cognito import (
     cognito_configured,
     exchange_code_for_tokens,
@@ -56,24 +64,36 @@ async def admin_login(req: AdminLoginRequest):
 
 @router.post("/signup")
 async def signup(req: SignupRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Client).where(Client.email == req.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, "An account with this email already exists")
+    # Validate + normalize all inputs to company-standard rules.
+    name = validate_name(req.name)
+    email = validate_email_deliverable(req.email)  # rejects fake/mistyped domains
+    validate_password(req.password)
+    phone = normalize_phone(req.phone, required=True)
 
-    if len(req.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    # Case-insensitive uniqueness — one account per email address.
+    # Use .first() (not scalar_one_or_none) so legacy duplicate rows don't crash the check.
+    existing = await db.execute(
+        select(Client.id).where(func.lower(Client.email) == email).limit(1)
+    )
+    if existing.first() is not None:
+        raise HTTPException(409, "An account with this email already exists. Please log in instead.")
 
     client = Client(
-        name=req.name,
-        email=req.email,
+        name=name,
+        email=email,
         password_hash=hash_password(req.password),
-        phone=req.phone,
+        phone=phone,
         age=req.age,
         gender=req.gender,
         goal=req.goal,
     )
     db.add(client)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Guards against the race where two requests pass the check above.
+        await db.rollback()
+        raise HTTPException(409, "An account with this email already exists. Please log in instead.")
     await db.refresh(client)
 
     token = create_token(client.id)
@@ -82,14 +102,21 @@ async def signup(req: SignupRequest, db: AsyncSession = Depends(get_db)):
         "name": client.name,
         "email": client.email,
         "status": client.status,
+        "audit_completed": client.audit_completed,
         "token": token,
     }
 
 
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Client).where(Client.email == req.email))
-    client = result.scalar_one_or_none()
+    email = normalize_email(req.email)
+    # Prefer an account that actually has a password set (tolerant of legacy duplicates).
+    result = await db.execute(
+        select(Client)
+        .where(func.lower(Client.email) == email, Client.password_hash.isnot(None))
+        .limit(1)
+    )
+    client = result.scalars().first()
 
     if not client or not client.password_hash:
         raise HTTPException(401, "Invalid email or password")
@@ -118,7 +145,7 @@ async def _upsert_oauth_client(db: AsyncSession, claims: dict) -> Client:
     Every federated (Google) sign-in lands a row in the `clients` table, so the
     user shows up in the admin database alongside email/password sign-ups.
     """
-    email = (claims.get("email") or "").lower().strip()
+    email = normalize_email(claims.get("email") or "")
     if not email:
         raise HTTPException(400, "Cognito token did not include an email claim")
 
@@ -128,8 +155,10 @@ async def _upsert_oauth_client(db: AsyncSession, claims: dict) -> Client:
         or email.split("@")[0]
     )
 
-    result = await db.execute(select(Client).where(Client.email == email))
-    client = result.scalar_one_or_none()
+    result = await db.execute(
+        select(Client).where(func.lower(Client.email) == email).limit(1)
+    )
+    client = result.scalars().first()
 
     if client is None:
         client = Client(name=name, email=email)

@@ -48,11 +48,16 @@ function CompleteProfileInner() {
   }, [clientId, router]);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const setPhone = (v: string) => set("phone", v.replace(/\D/g, "").slice(0, 10));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
       toast({ title: "Please fill name, email and phone", variant: "destructive" });
+      return;
+    }
+    if (!/^[6-9]\d{9}$/.test(form.phone)) {
+      toast({ title: "Invalid phone", description: "Enter a valid 10-digit mobile number.", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -131,7 +136,7 @@ function CompleteProfileInner() {
                   </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
-                    <input type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+91 98765 43210" required className={fieldCls} />
+                    <input type="tel" inputMode="numeric" maxLength={10} value={form.phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" required className={fieldCls} />
                   </div>
                 </div>
 
