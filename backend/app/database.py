@@ -6,9 +6,10 @@ from app.config import settings
 
 # Neon (and any TLS-required Postgres) needs an SSL context passed via connect_args.
 # asyncpg ignores sslmode/channel_binding in the URL, so we handle it here.
+# Full certificate + hostname verification stays on (Neon's pooler presents a
+# publicly-trusted cert) — disabling it would allow a MITM'd connection to
+# read/alter every query, including credential and payment data.
 _ssl_ctx = ssl.create_default_context()
-_ssl_ctx.check_hostname = False
-_ssl_ctx.verify_mode = ssl.CERT_NONE
 
 # Strip query params that asyncpg doesn't understand before passing to the engine.
 _db_url = (
@@ -23,7 +24,15 @@ engine = create_async_engine(
     _db_url,
     echo=False,
     pool_pre_ping=True,
-    connect_args={"ssl": _ssl_ctx},
+    pool_recycle=280,  # recycle before Neon's pooler drops idle connections
+    connect_args={
+        "ssl": _ssl_ctx,
+        # Neon's pooled endpoint runs PgBouncer in transaction mode, which is
+        # incompatible with asyncpg's default server-side prepared statement
+        # cache (a cached statement can point at a connection the pooler has
+        # since swapped out, aborting the query mid-transaction).
+        "statement_cache_size": 0,
+    },
 )
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
 const TOKEN_KEY = "sarvarasa_token";
+const ADMIN_TOKEN_KEY = "sarvarasa_admin_token";
 
 const inputCls =
   "w-full px-5 h-12 rounded-full border border-border bg-white/60 font-body text-sm text-dark placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus:border-accent transition";
@@ -28,6 +29,10 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
 
   const set = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val }));
+
+  useEffect(() => {
+    if (localStorage.getItem(ADMIN_TOKEN_KEY)) router.replace("/admin");
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

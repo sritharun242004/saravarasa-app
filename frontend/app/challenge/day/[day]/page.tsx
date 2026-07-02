@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,11 +24,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Trash2,
-  ChevronDown,
-  ChevronUp,
+  Clock,
   Images,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDayDate, formatTime12 } from "@/lib/utils";
 import Link from "next/link";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
@@ -42,17 +40,36 @@ const MEAL_INFO: Record<string, { label: string; emoji: string; hint: string }> 
   SNACK:     { label: "Snack (Optional)", emoji: "🍎", hint: "Fruits, nuts, tea, biscuits…" },
 };
 const REQUIRED_MEALS = ["BREAKFAST", "LUNCH", "DINNER"];
+const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const PERIODS = ["AM", "PM"] as const;
+
+// The backend only ever stores/validates 24-hour "HH:MM" — these convert that
+// to/from the 12-hour hour + AM/PM shown in the UI.
+function to24Hour(hour12: string, minute: string, period: string): string {
+  let h = parseInt(hour12, 10) % 12;
+  if (period === "PM") h += 12;
+  return `${String(h).padStart(2, "0")}:${minute}`;
+}
+
+function from24Hour(time24: string): { hour12: string; minute: string; period: "AM" | "PM" } {
+  const [hhStr, mm] = time24.split(":");
+  const hh = parseInt(hhStr, 10);
+  const period: "AM" | "PM" = hh >= 12 ? "PM" : "AM";
+  const hour12 = String(hh % 12 || 12).padStart(2, "0");
+  return { hour12, minute: mm || "00", period };
+}
 
 interface MealFormState {
   foods: StructuredFood[];
-  quickAddText: string;
-  showQuickAdd: boolean;
+  loggedTime: string;
   imageFile: File | null;
   imagePreview: string | null;
   submitting: boolean;
   submitted: boolean;
   existingImageUrl?: string;
   existingFoods?: string;
+  existingTime?: string;
 }
 
 function MealForm({
@@ -82,14 +99,14 @@ function MealForm({
 
   const [state, setState] = useState<MealFormState>({
     foods: existingStructuredFoods,
-    quickAddText: "",
-    showQuickAdd: false,
+    loggedTime: existing?.logged_time || "",
     imageFile: null,
     imagePreview: null,
     submitting: false,
     submitted: !!existing,
     existingImageUrl: existing?.image_url,
     existingFoods: existing?.meal_text,
+    existingTime: existing?.logged_time,
   });
 
   const info = MEAL_INFO[mealType];
@@ -118,11 +135,18 @@ function MealForm({
   };
 
   const handleSubmit = async () => {
-    const hasFoods = state.foods.length > 0 || state.quickAddText.trim();
-    if (!hasFoods) {
+    if (state.foods.length === 0) {
       toast({
         title: "Add at least one food",
-        description: "Search and add a food, or use Quick Add below.",
+        description: "Search for a food and save it, or type your own and save it.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!state.loggedTime) {
+      toast({
+        title: "Add the time",
+        description: "Enter the time you ate this meal.",
         variant: "destructive",
       });
       return;
@@ -130,12 +154,12 @@ function MealForm({
     setState((s) => ({ ...s, submitting: true }));
     try {
       await submitMealStructured({
-        client_id:      clientId,
-        day_number:     dayNumber,
-        meal_type:      mealType,
-        foods:          state.foods,
-        quick_add_text: state.quickAddText.trim() || undefined,
-        image:          state.imageFile!,
+        client_id:   clientId,
+        day_number:  dayNumber,
+        meal_type:   mealType,
+        foods:       state.foods,
+        logged_time: state.loggedTime,
+        image:       state.imageFile!,
       });
       setState((s) => ({ ...s, submitting: false, submitted: true }));
       onSubmitted(mealType);
@@ -155,13 +179,16 @@ function MealForm({
     const summary =
       state.foods.length > 0
         ? state.foods.map((f) => `${f.quantity}x ${f.food_name}`).join(", ")
-        : state.quickAddText || state.existingFoods || "Meal logged";
+        : state.existingFoods || "Meal logged";
+    const time = state.loggedTime || state.existingTime;
 
     return (
       <div className="flex items-center gap-3 p-4 bg-accent/5 border border-accent/20 rounded-2xl">
         <CheckCircle2 className="w-6 h-6 text-accent shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="font-body text-sm font-medium text-dark">{info.label} logged</p>
+          <p className="font-body text-sm font-medium text-dark">
+            {info.label} logged{time ? ` at ${formatTime12(time)}` : ""}
+          </p>
           <p className="font-body text-xs text-dark/50 truncate">{summary}</p>
         </div>
         <Button
@@ -204,7 +231,8 @@ function MealForm({
           >
             {imageDisplayUrl ? (
               <div className="relative h-32">
-                <Image src={imageDisplayUrl} alt="Meal" fill className="object-cover" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imageDisplayUrl} alt="Meal" className="absolute inset-0 w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                   <Camera className="w-6 h-6 text-white" />
                 </div>
@@ -262,6 +290,73 @@ function MealForm({
           )}
         </div>
 
+        {/* Time eaten (manual entry) — 12-hour Hour/Minute selects plus an AM/PM
+            dropdown, converted to 24-hour "HH:MM" before it's sent/stored. */}
+        <div>
+          <label className="font-body text-xs text-dark/50 uppercase tracking-wide font-semibold mb-1.5 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" /> Time you ate this
+          </label>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const { hour12, minute, period } = state.loggedTime
+                ? from24Hour(state.loggedTime)
+                : { hour12: "", minute: "", period: "AM" as const };
+              return (
+                <>
+                  <select
+                    value={hour12}
+                    onChange={(e) => {
+                      const h12 = e.target.value;
+                      setState((s) => ({
+                        ...s,
+                        loggedTime: to24Hour(h12, minute || "00", period),
+                      }));
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-card font-body text-sm text-dark focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  >
+                    <option value="" disabled>HH</option>
+                    {HOURS_12.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                  <span className="font-heading text-dark/40">:</span>
+                  <select
+                    value={minute}
+                    onChange={(e) => {
+                      const mm = e.target.value;
+                      setState((s) => ({
+                        ...s,
+                        loggedTime: to24Hour(hour12 || "12", mm, period),
+                      }));
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-card font-body text-sm text-dark focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  >
+                    <option value="" disabled>MM</option>
+                    {MINUTES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={period}
+                    onChange={(e) => {
+                      const p = e.target.value;
+                      setState((s) => ({
+                        ...s,
+                        loggedTime: to24Hour(hour12 || "12", minute || "00", p),
+                      }));
+                    }}
+                    className="px-3 py-2.5 rounded-xl border border-border bg-card font-body text-sm text-dark focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  >
+                    {PERIODS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+
         {/* Add Food (structured search) */}
         <AddFoodDialog onAdd={addFood} />
 
@@ -291,47 +386,19 @@ function MealForm({
           </div>
         )}
 
-        {/* Quick Add (optional free-text fallback) */}
-        <div>
-          <button
-            onClick={() => setState((s) => ({ ...s, showQuickAdd: !s.showQuickAdd }))}
-            className="flex items-center gap-1.5 font-body text-xs text-dark/50 hover:text-dark transition-colors"
-          >
-            {state.showQuickAdd ? (
-              <ChevronUp className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
-            Quick Add (optional)
-          </button>
-          <AnimatePresence>
-            {state.showQuickAdd && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-2 overflow-hidden"
-              >
-                <textarea
-                  rows={2}
-                  value={state.quickAddText}
-                  onChange={(e) => setState((s) => ({ ...s, quickAddText: e.target.value }))}
-                  placeholder={`e.g. "I ate ${info.hint}"`}
-                  className="w-full px-4 py-3 rounded-xl border border-border bg-card font-body text-sm text-dark placeholder:text-dark/40 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-                <p className="font-body text-xs text-dark/40 mt-1">
-                  Free text won't be matched to the food database — use it only as extra context.
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
         <Button
           onClick={handleSubmit}
-          disabled={state.submitting || !imageDisplayUrl}
+          disabled={state.submitting || !imageDisplayUrl || !state.loggedTime || state.foods.length === 0}
           className="w-full"
-          title={!imageDisplayUrl ? "Upload a meal photo first" : undefined}
+          title={
+            !imageDisplayUrl
+              ? "Upload a meal photo first"
+              : !state.loggedTime
+              ? "Enter the time you ate this meal"
+              : state.foods.length === 0
+              ? "Add at least one food"
+              : undefined
+          }
         >
           {state.submitting ? (
             <>
@@ -339,6 +406,8 @@ function MealForm({
             </>
           ) : !imageDisplayUrl ? (
             "📷 Upload Photo to Save"
+          ) : !state.loggedTime ? (
+            "🕐 Add Time to Save"
           ) : (
             `Save ${info.label}`
           )}
@@ -352,6 +421,7 @@ export default function DayPage() {
   const params = useParams();
   const router = useRouter();
   const dayNumber = parseInt(params.day as string);
+  const { toast } = useToast();
   const [dayMeals, setDayMeals] = useState<DayMeals | null>(null);
   const [loading, setLoading] = useState(true);
   const [submittedTypes, setSubmittedTypes] = useState<Set<string>>(new Set());
@@ -362,28 +432,38 @@ export default function DayPage() {
   useEffect(() => {
     if (!clientId) { router.push("/onboarding"); return; }
     if (isNaN(dayNumber) || dayNumber < 1 || dayNumber > 7) { router.push("/challenge"); return; }
-    // Once the 7-day challenge is finished, logging is closed — send users to the results page.
-    getChallengeProgress(clientId)
-      .then((prog) => {
+    // Fetch progress and this day's meals in parallel (instead of waiting on progress
+    // before even starting the day-meals request) — the rare redirect cases below just
+    // discard the day-meals response instead of never having requested it.
+    Promise.all([getChallengeProgress(clientId), getDayMeals(clientId, dayNumber)])
+      .then(([prog, data]) => {
         const completed = prog.days_detail
           ? Object.values(prog.days_detail).filter((types) =>
               ["BREAKFAST", "LUNCH", "DINNER"].every((t) => (types as string[]).includes(t))
             ).length
           : 0;
+        // Once the 7-day challenge is finished, logging is closed — send users to the results page.
         if (completed >= 7 || (prog.current_day || 1) > 7) {
           router.replace("/challenge");
-          return null;
+          return;
         }
-        return getDayMeals(clientId, dayNumber);
-      })
-      .then((data) => {
-        if (!data) return;
+        // Days are logged in order — bounce back if this day isn't reachable yet.
+        const currentDay = prog.current_day || 1;
+        if (dayNumber > currentDay) {
+          toast({
+            title: "Complete earlier days first",
+            description: `Finish Day ${currentDay} before logging Day ${dayNumber}.`,
+            variant: "destructive",
+          });
+          router.replace(`/challenge/day/${currentDay}`);
+          return;
+        }
         setDayMeals(data);
         const done = new Set(data.meals.map((m) => m.meal_type));
         setSubmittedTypes(done);
       })
       .finally(() => setLoading(false));
-  }, [clientId, dayNumber, router]);
+  }, [clientId, dayNumber, router, toast]);
 
   const handleSubmitted = (type: string) => {
     setSubmittedTypes((prev) => new Set([...prev, type]));
@@ -415,7 +495,14 @@ export default function DayPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="font-heading text-2xl font-bold text-dark">Day {dayNumber}</h1>
+            <h1 className="font-heading text-2xl font-bold text-dark">
+              Day {dayNumber}
+              {dayMeals?.log_date && (
+                <span className="font-body text-base font-normal text-dark/50 ml-2">
+                  {formatDayDate(dayMeals.log_date)}
+                </span>
+              )}
+            </h1>
             <p className="font-body text-sm text-dark/60">Log your meals for today</p>
           </div>
         </div>

@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { getChallengeProgress, generateReport, type ChallengeProgress } from "@/lib/api";
 import { useToast } from "@/lib/use-toast";
 import { Loader2, CheckCircle2, Circle, Lock, ArrowRight, Calendar, FileText } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDayDate } from "@/lib/utils";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 
@@ -22,27 +22,50 @@ const MEAL_ICONS: Record<string, string> = {
   SNACK: "🍎",
 };
 
-function DayCard({ day, completedDays, currentDay, locked }: { day: number; completedDays: number[]; currentDay: number; locked?: boolean }) {
+function DayCard({
+  day,
+  date,
+  completedDays,
+  currentDay,
+  locked,
+  futureLocked,
+}: {
+  day: number;
+  date?: string | null;
+  completedDays: number[];
+  currentDay: number;
+  locked?: boolean;      // challenge finished — view-only, no re-logging
+  futureLocked?: boolean; // day N+1 not yet reachable — day N isn't complete yet
+}) {
   const isComplete = completedDays.includes(day);
   const isCurrent = day === currentDay;
   const isPast = day < currentDay;
+  const isBlocked = locked || futureLocked;
 
   const cardContent = (
     <motion.div
-      whileHover={locked ? undefined : { scale: 1.02 }}
-      whileTap={locked ? undefined : { scale: 0.98 }}
+      whileHover={isBlocked ? undefined : { scale: 1.02 }}
+      whileTap={isBlocked ? undefined : { scale: 0.98 }}
       className={cn(
         "rounded-2xl border p-4 transition-all duration-200",
-        locked ? "cursor-default" : "cursor-pointer",
+        isBlocked ? "cursor-default" : "cursor-pointer",
+        futureLocked ? "border-gray-200 bg-gray-50 opacity-60" :
         isComplete ? "border-green-200 bg-green-50" :
         isCurrent ? "border-blue-300 bg-blue-50 ring-1 ring-blue-200" :
         "border-gray-200 bg-white hover:border-gray-300"
       )}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="font-heading text-sm font-semibold text-gray-700">Day {day}</span>
+        <div>
+          <span className="font-heading text-sm font-semibold text-gray-700">Day {day}</span>
+          {date && (
+            <span className="font-body text-xs text-gray-400 block">{formatDayDate(date)}</span>
+          )}
+        </div>
         {isComplete ? (
           <CheckCircle2 className="w-5 h-5 text-green-600" />
+        ) : futureLocked ? (
+          <Lock className="w-4 h-4 text-gray-400" />
         ) : isCurrent ? (
           <Circle className="w-5 h-5 text-blue-600 animate-pulse" />
         ) : (
@@ -60,17 +83,19 @@ function DayCard({ day, completedDays, currentDay, locked }: { day: number; comp
           />
         ))}
       </div>
-      {isCurrent && !locked && (
+      {isCurrent && !isBlocked && (
         <p className="font-body text-xs text-blue-600 font-medium mt-2">→ Log meals</p>
       )}
       {isPast && !isComplete && (
         <p className="font-body text-xs text-gray-400 mt-2">Submitted</p>
       )}
+      {futureLocked && (
+        <p className="font-body text-xs text-gray-400 mt-2">Complete Day {day - 1} first</p>
+      )}
     </motion.div>
   );
 
-  // Once the challenge is complete, days are view-only (no re-logging).
-  if (locked) return cardContent;
+  if (isBlocked) return cardContent;
   return <Link href={`/challenge/day/${day}`}>{cardContent}</Link>;
 }
 
@@ -79,6 +104,7 @@ export default function ChallengePage() {
   const { toast } = useToast();
   const [progress, setProgress] = useState<ChallengeProgress | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const clientId = typeof window !== "undefined" ? localStorage.getItem(CLIENT_ID_KEY) || "" : "";
@@ -98,15 +124,23 @@ export default function ChallengePage() {
     }
   };
 
+  const loadProgress = () => {
+    if (!clientId) return;
+    setLoading(true);
+    setLoadError(false);
+    getChallengeProgress(clientId)
+      .then(setProgress)
+      .catch(() => setLoadError(true))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
     if (!clientId) {
       router.push("/onboarding");
       return;
     }
-    getChallengeProgress(clientId)
-      .then(setProgress)
-      .catch(() => router.push("/audit"))
-      .finally(() => setLoading(false));
+    loadProgress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, router]);
 
   if (loading) {
@@ -119,7 +153,22 @@ export default function ChallengePage() {
     );
   }
 
-  if (!progress) return null;
+  if (loadError || !progress) {
+    return (
+      <AppShell>
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          <Card>
+            <CardContent className="p-6 text-center space-y-3">
+              <p className="font-body text-sm text-dark/70">
+                Couldn't load your challenge progress. Please check your connection and try again.
+              </p>
+              <Button onClick={loadProgress}>Try again</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppShell>
+    );
+  }
 
   const completedDays = progress.days_detail
     ? Object.entries(progress.days_detail)
@@ -214,7 +263,15 @@ export default function ChallengePage() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-              <DayCard key={day} day={day} completedDays={completedDays} currentDay={currentDay} locked={challengeComplete} />
+              <DayCard
+                key={day}
+                day={day}
+                date={progress.day_dates?.[day]}
+                completedDays={completedDays}
+                currentDay={currentDay}
+                locked={challengeComplete}
+                futureLocked={!challengeComplete && day > currentDay}
+              />
             ))}
           </div>
         </motion.div>

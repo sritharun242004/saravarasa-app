@@ -9,12 +9,27 @@ services:
     ports:
       - "8000:8000"
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: ${DATABASE_URL}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       CONTENT_SAFETY_MODEL: ${CONTENT_SAFETY_MODEL:-nvidia/nemotron-3.5-content-safety:free}
+      LLM_REPORT_MODEL: ${LLM_REPORT_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
       INDB_FILE_PATH: /app/data/Anuvaad_INDB_2024.11.xlsx
       UPLOAD_DIR: /app/uploads
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000"]'}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      COGNITO_REGION: ${COGNITO_REGION:-}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN:-}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID:-}
+      COGNITO_APP_CLIENT_SECRET: ${COGNITO_APP_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     volumes:
       - ./data:/app/data:ro
       - backend_uploads:/app/uploads

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
 const TOKEN_KEY = "sarvarasa_token";
+const ADMIN_TOKEN_KEY = "sarvarasa_admin_token";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[6-9]\d{9}$/;
@@ -49,6 +50,10 @@ export default function SignupPage() {
 
   // Keep phone to digits only, max 10.
   const setPhone = (val: string) => set("phone", val.replace(/\D/g, "").slice(0, 10));
+
+  useEffect(() => {
+    if (localStorage.getItem(ADMIN_TOKEN_KEY)) router.replace("/admin");
+  }, [router]);
 
   // Input classes — add a red highlight when the field has an error.
   const cls = (field: keyof Errors, extra = "") =>

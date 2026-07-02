@@ -52,3 +52,6 @@ yarn-error.log*
 
 # Local Docker overrides
 docker-compose.override.yml
+
+# Added by ggshield
+.cache_ggshield

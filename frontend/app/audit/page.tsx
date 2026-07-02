@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/lib/use-toast";
-import { submitLifestyleAudit, getAuditResult, type AuditSubmitResult } from "@/lib/api";
+import { submitLifestyleAudit, getAuditResult, getMe, type AuditSubmitResult } from "@/lib/api";
 import { ArrowRight, ArrowLeft, CheckCircle2, Loader2, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -205,13 +205,18 @@ export default function AuditPage() {
   }, []);
 
   // If the audit is already completed, show the saved result (read-only) — no retake.
+  // Checks client.audit_completed first so we only ever call getAuditResult for
+  // clients who actually have one — otherwise every first-time visitor would
+  // trigger an expected-but-noisy 404 in the browser console.
   useEffect(() => {
     if (!clientId) {
       router.push("/login");
       return;
     }
-    getAuditResult(clientId)
+    getMe()
+      .then((me) => (me.audit_completed ? getAuditResult(clientId) : null))
       .then((r) => {
+        if (!r) return;
         setResult({
           success: true,
           score: r.total_score,

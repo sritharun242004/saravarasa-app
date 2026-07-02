@@ -143,6 +143,7 @@ export interface RegisterResponse {
   name: string;
   status: string;
   batch_id: string | null;
+  token: string;
 }
 
 export async function registerClient(req: RegisterRequest): Promise<RegisterResponse> {
@@ -254,6 +255,8 @@ export interface ChallengeProgress {
   required_meals: number;
   current_day: number;
   consistency_pct: number;
+  challenge_start_date: string | null;
+  day_dates: Record<string, string>; // "1".."7" -> "YYYY-MM-DD", back to back from day 1
 }
 
 export interface SubmitMealParams {
@@ -287,6 +290,7 @@ export interface MealEntry {
   meal_type: string;
   meal_text: string;
   image_url?: string;
+  logged_time?: string;
   food_pattern_tags: string[];
   submitted_at: string;
   foods?: MealFoodItem[];
@@ -295,6 +299,7 @@ export interface MealEntry {
 
 export interface DayMeals {
   day: number;
+  log_date: string | null; // "YYYY-MM-DD"
   challenge_cycle: number;
   is_complete: boolean;
   meals: MealEntry[];
@@ -450,12 +455,24 @@ export interface AdminClientDetail {
   };
   meal_timeline: {
     day: number;
+    log_date: string | null;
     meal_type: string;
     meal_text: string;
+    logged_time: string | null;
     image_url?: string;
     food_pattern_tags: string[];
     challenge_cycle: number;
     submitted_at: string;
+    foods: {
+      food_id: string | null;
+      food_name: string;
+      quantity: number;
+      unit: string;
+      calories: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+    }[];
   }[];
   report: {
     compliance_score: number;
@@ -534,19 +551,19 @@ export interface SubmitMealStructuredParams {
   day_number: number;
   meal_type: string;
   foods: StructuredFood[];
-  quick_add_text?: string;
-  image: File | null;   // null = keep existing image (re-submission)
+  logged_time: string;   // "HH:MM" — time the meal was eaten, entered manually
+  image: File | null;    // null = keep existing image (re-submission)
 }
 
 export async function submitMealStructured(
   params: SubmitMealStructuredParams,
-): Promise<{ log_id: string; image_url: string }> {
+): Promise<{ log_id: string; image_url: string; logged_time: string; log_date: string }> {
   const form = new FormData();
   form.append("client_id", params.client_id);
   form.append("day_number", String(params.day_number));
   form.append("meal_type", params.meal_type);
   form.append("foods_json", JSON.stringify(params.foods));
-  if (params.quick_add_text) form.append("quick_add_text", params.quick_add_text);
+  form.append("logged_time", params.logged_time);
   if (params.image) form.append("image", params.image);
   const { data } = await api.post("/challenge/submit-meal", form, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -578,24 +595,4 @@ export async function getMealFoods(mealLogId: string): Promise<MealFoodEntry[]> 
 export async function foodAutocomplete(q: string): Promise<string[]> {
   const { data } = await api.get("/foods/autocomplete", { params: { q } });
   return data.suggestions as string[];
-}
-
-// ─── Legacy types kept for analysis routes (not used in Sarvarasa main flow) ──
-
-export interface AnalyzeImageResponse {
-  foods: { name: string; confidence: number; display_name: string }[];
-  image_url: string;
-  session_id: string;
-}
-
-export interface NutritionResult {
-  meal_id: string;
-  foods: string[];
-  total_calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
-  image_url: string;
-  created_at: string;
 }

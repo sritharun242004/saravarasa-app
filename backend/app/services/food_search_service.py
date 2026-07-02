@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 
-# Minimum trigram similarity score to include a result.
-_TRGM_THRESHOLD = 0.15
+# Minimum trigram similarity score to include a result. 0.15 was letting through
+# essentially-unrelated foods (e.g. "konda kadalai" fuzzy-matching "methi malai
+# paneer") — 0.3 matches Postgres' own pg_trgm default and keeps only genuine
+# spelling variants/typos of a real food.
+_TRGM_THRESHOLD = 0.3
 
 
 class FoodSearchService:

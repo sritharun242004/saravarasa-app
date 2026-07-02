@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from app.database import AsyncSessionLocal
 from app.models.client import Client
+from app.core.security import get_current_client, require_owner
 from app.core.validation import validate_email_deliverable, normalize_phone, validate_name
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -44,7 +45,12 @@ async def get_db():
 
 
 @router.get("/{client_id}", response_model=ProfileResponse)
-async def get_profile(client_id: str, db: AsyncSession = Depends(get_db)):
+async def get_profile(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
@@ -53,7 +59,13 @@ async def get_profile(client_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{client_id}", response_model=ProfileResponse)
-async def update_profile(client_id: str, profile_update: ProfileUpdate, db: AsyncSession = Depends(get_db)):
+async def update_profile(
+    client_id: str,
+    profile_update: ProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:

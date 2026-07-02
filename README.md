@@ -58,11 +58,11 @@ pip install -r requirements.txt
 
 # Every time
 venv\Scripts\activate
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8000
 ```
 
-Backend runs at: http://localhost:8001  
-Interactive API docs: http://localhost:8001/docs
+Backend runs at: http://localhost:8000  
+Interactive API docs: http://localhost:8000/docs
 
 **Frontend** — open a separate terminal in `frontend/`:
 ```bash
@@ -97,7 +97,7 @@ CORS_ORIGINS=["http://localhost:3000"]
 
 ### Frontend (`frontend/.env.local`)
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8001
+NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=change-in-production
 ```
