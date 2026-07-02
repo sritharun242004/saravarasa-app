@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, AlertCircle } from "lucide-react";
 import { exchangeCognitoCode } from "@/lib/api";
-import { getOAuthRedirectUri } from "@/lib/cognito";
+import { consumeOAuthState, getOAuthRedirectUri } from "@/lib/cognito";
 import { Button } from "@/components/ui/button";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
@@ -22,7 +22,16 @@ function CallbackInner() {
     ran.current = true;
 
     const code = params.get("code");
+    const returnedState = params.get("state");
     const oauthError = params.get("error_description") || params.get("error");
+
+    // Verify the `state` this browser generated before redirecting to Google
+    // matches what came back — rejects a forged/replayed callback (login CSRF).
+    const expectedState = consumeOAuthState();
+    if (!expectedState || returnedState !== expectedState) {
+      setError("Sign-in session expired or is invalid. Please try again.");
+      return;
+    }
 
     if (oauthError) {
       setError(oauthError);

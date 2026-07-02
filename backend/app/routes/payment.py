@@ -23,6 +23,7 @@ from app.models.payment import PaymentTransaction
 router = APIRouter(prefix="/payment", tags=["Payment"])
 
 REACTIVATION_AMOUNT_PAISE = 29900  # ₹299 in paise
+_is_dev_environment = settings.environment.lower() == "development"
 
 
 class CreateOrderRequest(BaseModel):
@@ -64,7 +65,10 @@ async def create_order(
         })
         order_id = order["id"]
     except Exception:
-        # Razorpay not configured — return mock order for dev
+        # Razorpay not configured — only acceptable outside production, where
+        # /payment/verify also refuses to skip signature verification.
+        if not _is_dev_environment:
+            raise HTTPException(503, "Payment processing is not configured")
         order_id = f"order_dev_{req.client_id[:8]}"
 
     txn = PaymentTransaction(
@@ -112,8 +116,12 @@ async def verify_payment(
         raise HTTPException(409, "This payment has already been verified")
 
     # "Dev mode" (skip signature check) is a server-side configuration fact —
-    # never inferred from caller-supplied order_id/signature values.
+    # never inferred from caller-supplied order_id/signature values. It is only
+    # ever allowed outside production: shipping to prod with an unset/dev
+    # Razorpay secret must fail closed, not silently accept unsigned payments.
     is_dev = settings.razorpay_key_secret in ("", "dev_secret")
+    if is_dev and not _is_dev_environment:
+        raise HTTPException(503, "Payment verification is not configured")
 
     if not is_dev:
         expected = hmac.new(

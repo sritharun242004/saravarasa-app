@@ -596,23 +596,3 @@ export async function foodAutocomplete(q: string): Promise<string[]> {
   const { data } = await api.get("/foods/autocomplete", { params: { q } });
   return data.suggestions as string[];
 }
-
-// ─── Legacy types kept for analysis routes (not used in Sarvarasa main flow) ──
-
-export interface AnalyzeImageResponse {
-  foods: { name: string; confidence: number; display_name: string }[];
-  image_url: string;
-  session_id: string;
-}
-
-export interface NutritionResult {
-  meal_id: string;
-  foods: string[];
-  total_calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
-  image_url: string;
-  created_at: string;
-}

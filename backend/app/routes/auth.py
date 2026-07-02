@@ -1,9 +1,12 @@
+import secrets
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
+
+from app.core.rate_limit import limiter
 
 from app.database import get_db
 from app.config import settings
@@ -46,14 +49,18 @@ class AdminLoginRequest(BaseModel):
 
 
 @router.post("/admin/login")
-async def admin_login(req: AdminLoginRequest):
+@limiter.limit("5/minute")
+async def admin_login(request: Request, req: AdminLoginRequest):
     """Authenticate the single configured admin and return an admin token."""
     if not settings.admin_email or not settings.admin_password:
         raise HTTPException(503, "Admin login is not configured")
-    if (
-        req.email.strip().lower() != settings.admin_email.strip().lower()
-        or req.password != settings.admin_password
-    ):
+    # Constant-time comparisons — a naive `!=` short-circuits on the first
+    # differing byte, which leaks a timing side-channel over many requests.
+    email_ok = secrets.compare_digest(
+        req.email.strip().lower(), settings.admin_email.strip().lower()
+    )
+    password_ok = secrets.compare_digest(req.password, settings.admin_password)
+    if not (email_ok and password_ok):
         raise HTTPException(401, "Invalid admin credentials")
     return {
         "token": create_token(settings.admin_email),
@@ -63,7 +70,8 @@ async def admin_login(req: AdminLoginRequest):
 
 
 @router.post("/signup")
-async def signup(req: SignupRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def signup(request: Request, req: SignupRequest, db: AsyncSession = Depends(get_db)):
     # Validate + normalize all inputs to company-standard rules.
     name = validate_name(req.name)
     email = validate_email_deliverable(req.email)  # rejects fake/mistyped domains
@@ -108,7 +116,8 @@ async def signup(req: SignupRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login")
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
     email = normalize_email(req.email)
     # Prefer an account that actually has a password set (tolerant of legacy duplicates).
     result = await db.execute(

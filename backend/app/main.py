@@ -5,10 +5,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger("uvicorn.error")
 
 from app.config import settings
+from app.core.rate_limit import limiter
 from app.database import init_db, AsyncSessionLocal
 from app.services.alias_seeder import seed_aliases
 from app.routes.onboarding import router as onboarding_router
@@ -34,6 +38,16 @@ async def lifespan(app: FastAPI):
 
 _is_dev = settings.environment.lower() == "development"
 
+# A wildcard origin combined with allow_credentials=True lets any site make
+# credentialed requests (Starlette echoes the request's Origin header back
+# verbatim in that combination instead of literally sending "*") — refuse to
+# boot rather than silently open this up via a misconfigured env var.
+if "*" in settings.cors_origins:
+    raise RuntimeError(
+        "CORS_ORIGINS must not contain '*' — allow_credentials=True makes a "
+        "wildcard origin a same-origin-policy bypass. List explicit origins."
+    )
+
 app = FastAPI(
     title="Sarvarasa – 7-Day Wholesome Eating Challenge API",
     description="Food awareness and lifestyle assessment platform",
@@ -43,6 +57,10 @@ app = FastAPI(
     redoc_url="/redoc" if _is_dev else None,
     openapi_url="/openapi.json" if _is_dev else None,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

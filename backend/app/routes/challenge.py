@@ -20,7 +20,6 @@ from app.services.food_pattern_engine import classify_meal
 from app.services.food_search_service import (
     _food_search_service,
     calc_nutrition,
-    grams_for,
 )
 from app.services.food_llm_fallback import fallback_food_recognition_sync
 
@@ -168,7 +167,14 @@ async def _create_meal_foods(
             meal_log_id=meal_log_id,
             food_id=food_id if db_matched else None,
             food_name=display_name,
-            quantity=grams_for(quantity, unit, display_name),
+            # Store exactly what the user entered — grams_for()/calc_nutrition()
+            # already convert (quantity, unit) to grams internally to compute
+            # calories/macros, but the stored quantity itself must stay paired
+            # with `unit` as entered (e.g. quantity=2, unit="piece"), not be
+            # silently replaced by its gram-equivalent while `unit` stays
+            # "piece" — that mismatch is what showed the wrong number back to
+            # the user on the admin page and the meal log edit page.
+            quantity=quantity,
             unit=unit,
             calories=nutrition["calories"],
             protein=nutrition["protein"],
