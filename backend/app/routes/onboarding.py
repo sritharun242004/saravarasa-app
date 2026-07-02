@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
+from app.core.security import create_token, require_admin
 from app.models.client import Client, ChallengeBatch
 
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
@@ -43,10 +44,14 @@ async def register_client(req: RegisterRequest, db: AsyncSession = Depends(get_d
         "name": client.name,
         "status": client.status,
         "batch_id": client.batch_id,
+        # No password on this account (quick-start flow) — issue a token now so
+        # the client can immediately call the challenge/profile/audit endpoints,
+        # which all require a Bearer token matching the resource's client_id.
+        "token": create_token(client.id),
     }
 
 
-@router.get("/batches")
+@router.get("/batches", dependencies=[Depends(require_admin)])
 async def list_batches(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ChallengeBatch))
     batches = result.scalars().all()
@@ -62,7 +67,7 @@ async def list_batches(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/batches")
+@router.post("/batches", dependencies=[Depends(require_admin)])
 async def create_batch(req: CreateBatchRequest, db: AsyncSession = Depends(get_db)):
     batch = ChallengeBatch(name=req.name, capacity=req.capacity)
     db.add(batch)

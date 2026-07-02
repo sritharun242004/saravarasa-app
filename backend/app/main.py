@@ -1,8 +1,12 @@
+import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger("uvicorn.error")
 
 from app.config import settings
 from app.database import init_db, AsyncSessionLocal
@@ -28,11 +32,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_is_dev = settings.environment.lower() == "development"
+
 app = FastAPI(
     title="Sarvarasa – 7-Day Wholesome Eating Challenge API",
     description="Food awareness and lifestyle assessment platform",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
+    openapi_url="/openapi.json" if _is_dev else None,
 )
 
 app.add_middleware(
@@ -42,6 +51,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Without this, an unhandled exception is caught by Starlette's outermost
+    # ServerErrorMiddleware (above CORSMiddleware), so the resulting 500 has no
+    # CORS headers — the browser reports it as a blocked CORS request instead
+    # of a real error, and the client never sees a status code or message.
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong. Please try again."},
+    )
 
 # Serve uploaded meal images
 os.makedirs(settings.upload_dir, exist_ok=True)

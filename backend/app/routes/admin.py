@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, or_
 
 from app.database import get_db
 from app.core.security import require_admin
 from app.models.client import Client, ClientStatus
 from app.models.meal_log import MealLog
+from app.models.meal_food import MealFood
+from app.models.challenge_attempt import ChallengeAttempt
 from app.models.report import ChallengeReport
 from app.models.payment import PaymentTransaction
 from app.models.audit import LifestyleAudit
 from app.models.lifestyle_audit import LifestyleAuditResponse
 from app.models.test_attempt import TestAttempt
 from app.services.compliance_engine import calculate_compliance
+from app.services.challenge_dates import day_dates
 from app.services.eligibility_engine import BAND_LABELS
 
 # Every /admin route requires a valid admin token.
@@ -21,8 +24,29 @@ router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(requir
 @router.get("/dashboard")
 async def admin_dashboard(db: AsyncSession = Depends(get_db)):
     """High-level metrics for the Sarvarasa admin dashboard."""
-    clients_r = await db.execute(select(Client))
-    clients = clients_r.scalars().all()
+    status_upper = func.upper(Client.status)
+    is_active = or_(Client.status.is_(None), status_upper == "ACTIVE")
+
+    counts_r = await db.execute(
+        select(
+            func.count(Client.id),
+            func.count(case((Client.profile_completed == True, 1))),
+            func.count(case((status_upper == "QUALIFIED", 1))),
+            func.count(case((status_upper == "SECOND_CHANCE", 1))),
+            func.count(case((status_upper == "LOCKED", 1))),
+            func.count(case((is_active, 1))),
+            func.count(case((Client.challenge_cycle > 2, 1))),
+        )
+    )
+    (
+        total,
+        profile_completed_count,
+        qualified_count,
+        second_chance_count,
+        locked_count,
+        active_count,
+        reactivated_count,
+    ) = counts_r.one()
 
     audits_r = await db.execute(
         select(func.count(LifestyleAudit.id)).where(LifestyleAudit.completed == True)
@@ -36,41 +60,15 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
     )
     revenue = payments_r.scalar() or 0.0
 
-    profile_completed_r = await db.execute(
-        select(func.count(Client.id)).where(Client.profile_completed == True)
-    )
-    profile_completed_count = profile_completed_r.scalar() or 0
-
-    qualified_r = await db.execute(
-        select(func.count(Client.id)).where(Client.status == "QUALIFIED")
-    )
-    qualified_count = qualified_r.scalar() or 0
-
-    status_counts = {
-        "total": len(clients),
+    return {
+        "total": total,
         "profile_completed": profile_completed_count,
         "audit_completed": audit_completed_count,
-        "active": 0,
+        "active": active_count,
         "qualified": qualified_count,
-        "second_chance": 0,
-        "locked": 0,
-        "reactivated": 0,
-    }
-    for c in clients:
-        s = (c.status or "ACTIVE").upper()
-        if s == "QUALIFIED":
-            status_counts["qualified"] += 1
-        elif s == "SECOND_CHANCE":
-            status_counts["second_chance"] += 1
-        elif s == "LOCKED":
-            status_counts["locked"] += 1
-        elif s == "ACTIVE":
-            status_counts["active"] += 1
-        if (c.challenge_cycle or 1) > 2:
-            status_counts["reactivated"] += 1
-
-    return {
-        **status_counts,
+        "second_chance": second_chance_count,
+        "locked": locked_count,
+        "reactivated": reactivated_count,
         "revenue_inr": revenue,
     }
 
@@ -79,18 +77,29 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
 async def list_clients(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Client))
     clients = result.scalars().all()
+    client_ids = [c.id for c in clients]
+
+    # Batch-fetch every client's meal logs and report in two queries instead of
+    # issuing two round-trips per client (was 1 + 2N queries for N clients).
+    logs_by_client: dict[str, list[MealLog]] = {}
+    if client_ids:
+        logs_r = await db.execute(select(MealLog).where(MealLog.client_id.in_(client_ids)))
+        for log in logs_r.scalars().all():
+            logs_by_client.setdefault(log.client_id, []).append(log)
+
+    reports_by_client: dict[str, ChallengeReport] = {}
+    if client_ids:
+        reports_r = await db.execute(
+            select(ChallengeReport).where(ChallengeReport.client_id.in_(client_ids))
+        )
+        reports_by_client = {r.client_id: r for r in reports_r.scalars().all()}
 
     out = []
     for client in clients:
-        logs_r = await db.execute(
-            select(MealLog).where(
-                MealLog.client_id == client.id,
-                MealLog.challenge_cycle == (client.challenge_cycle or 1),
-            )
-        )
-        logs = logs_r.scalars().all()
+        cycle = client.challenge_cycle or 1
+        logs = [l for l in logs_by_client.get(client.id, []) if l.challenge_cycle == cycle]
         compliance = calculate_compliance(logs)
-        report = await db.get(ChallengeReport, client.id)
+        report = reports_by_client.get(client.id)
 
         out.append({
             "client_id": client.id,
@@ -124,9 +133,26 @@ async def get_client_detail(client_id: str, db: AsyncSession = Depends(get_db)):
     logs_r = await db.execute(select(MealLog).where(MealLog.client_id == client_id))
     logs = logs_r.scalars().all()
 
+    # Filtered in-memory (not a second query) since the full log list is already
+    # loaded above for the meal timeline below.
     current_cycle_logs = [l for l in logs if l.challenge_cycle == (client.challenge_cycle or 1)]
     compliance = calculate_compliance(current_cycle_logs)
     report = await db.get(ChallengeReport, client_id)
+
+    # Structured foods per meal log (name, quantity, unit, nutrition).
+    foods_by_log_id: dict[str, list] = {}
+    if logs:
+        foods_r = await db.execute(
+            select(MealFood).where(MealFood.meal_log_id.in_([l.id for l in logs]))
+        )
+        for mf in foods_r.scalars().all():
+            foods_by_log_id.setdefault(mf.meal_log_id, []).append(mf)
+
+    # Each challenge cycle's Day 1 date, so every meal log can show its real calendar date.
+    attempts_r = await db.execute(
+        select(ChallengeAttempt).where(ChallengeAttempt.client_id == client_id)
+    )
+    day_dates_by_cycle = {a.cycle: day_dates(a.started_at) for a in attempts_r.scalars().all()}
 
     audit_r = await db.execute(
         select(LifestyleAudit).where(LifestyleAudit.client_id == client_id)
@@ -193,12 +219,27 @@ async def get_client_detail(client_id: str, db: AsyncSession = Depends(get_db)):
         "meal_timeline": [
             {
                 "day": log.day_number,
+                "log_date": day_dates_by_cycle.get(log.challenge_cycle, {}).get(log.day_number),
                 "meal_type": log.meal_type,
                 "meal_text": log.meal_text,
+                "logged_time": log.logged_time,
                 "image_url": log.image_url,
                 "food_pattern_tags": log.food_pattern_tags or [],
                 "challenge_cycle": log.challenge_cycle,
                 "submitted_at": log.submitted_at,
+                "foods": [
+                    {
+                        "food_id":   mf.food_id,
+                        "food_name": mf.food_name or "",
+                        "quantity":  mf.quantity,
+                        "unit":      mf.unit,
+                        "calories":  mf.calories,
+                        "protein":   mf.protein,
+                        "carbs":     mf.carbs,
+                        "fat":       mf.fat,
+                    }
+                    for mf in foods_by_log_id.get(log.id, [])
+                ],
             }
             for log in sorted(logs, key=lambda x: (x.challenge_cycle, x.day_number, x.meal_type))
         ],

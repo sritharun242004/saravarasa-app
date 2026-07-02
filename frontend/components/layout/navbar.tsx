@@ -6,11 +6,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { User, Menu, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { User, Menu, X, LogOut, ShieldCheck } from "lucide-react";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
+const ADMIN_TOKEN_KEY = "sarvarasa_admin_token";
+const ADMIN_EMAIL_KEY = "sarvarasa_admin_email";
 
 const LINKS = [
   { href: "/challenge", label: "Food Challenge" },
@@ -20,12 +22,22 @@ const LINKS = [
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     setIsLoggedIn(!!localStorage.getItem(CLIENT_ID_KEY));
+    setIsAdmin(!!localStorage.getItem(ADMIN_TOKEN_KEY));
   }, [pathname]);
+
+  const adminLogout = () => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_EMAIL_KEY);
+    setIsAdmin(false);
+    router.push("/admin/login");
+  };
 
   // Close the mobile menu on route change.
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -76,7 +88,18 @@ export function Navbar() {
 
           {/* Right cluster */}
           <div className="flex items-center gap-2 shrink-0">
-            {isLoggedIn ? (
+            {isAdmin ? (
+              <>
+                <Link href="/admin" className="hidden sm:block">
+                  <Button size="sm" variant="ghost" className="text-primary">
+                    <ShieldCheck className="w-4 h-4 mr-1.5" /> Admin
+                  </Button>
+                </Link>
+                <Button size="sm" variant="secondary" onClick={adminLogout}>
+                  <LogOut className="w-4 h-4 mr-1.5" /> Logout
+                </Button>
+              </>
+            ) : isLoggedIn ? (
               <Link href="/profile" className="hidden md:block">
                 <Button size="sm" variant="ghost" className="text-primary">
                   <User className="w-4 h-4 mr-1.5" /> Profile
@@ -130,7 +153,18 @@ export function Navbar() {
                 </Link>
               ))}
               <div className="h-px bg-border/60 my-1" />
-              {isLoggedIn ? (
+              {isAdmin ? (
+                <div className="flex gap-2 p-1">
+                  <Link href="/admin" className="flex-1">
+                    <Button variant="outline" className="w-full">
+                      <ShieldCheck className="w-4 h-4 mr-1.5" /> Admin
+                    </Button>
+                  </Link>
+                  <Button className="flex-1" onClick={adminLogout}>
+                    <LogOut className="w-4 h-4 mr-1.5" /> Logout
+                  </Button>
+                </div>
+              ) : isLoggedIn ? (
                 <Link href="/profile" className="px-4 py-3 rounded-2xl text-sm font-semibold font-body text-dark/70 hover:bg-primary/5 hover:text-primary flex items-center gap-2">
                   <User className="w-4 h-4" /> Profile
                 </Link>

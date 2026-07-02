@@ -28,6 +28,7 @@ class MealLog(Base):
     image_url = Column(String, nullable=True)       # uploaded image path
     food_pattern_tags = Column(JSON, default=list)  # ["PROTEIN_PRESENT", "VEGETABLE_PRESENT", ...]
     challenge_cycle = Column(Integer, default=1)    # 1 = first attempt, 2 = second chance
+    logged_time = Column(String, nullable=True)     # user-entered time the meal was eaten, "HH:MM"
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
 
     client = relationship("Client", back_populates="meal_logs")

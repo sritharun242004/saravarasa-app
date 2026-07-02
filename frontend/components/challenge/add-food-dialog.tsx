@@ -27,6 +27,14 @@ export function AddFoodDialog({ onAdd }: AddFoodDialogProps) {
     setQuantity(1);
   };
 
+  // Food typed by the user that isn't in the database — still selectable,
+  // saved with the entered name (nutrition estimated server-side).
+  const handleAddCustom = (name: string) => {
+    setSelectedFood({ food_id: "", food_name: name, serving_unit: "", confidence: 0 });
+    setUnit("piece");
+    setQuantity(1);
+  };
+
   const handleAdd = () => {
     if (!selectedFood) return;
     onAdd({
@@ -49,7 +57,7 @@ export function AddFoodDialog({ onAdd }: AddFoodDialogProps) {
       </p>
 
       {/* Food search */}
-      <FoodSearch onSelect={handleSelect} />
+      <FoodSearch onSelect={handleSelect} onAddCustom={handleAddCustom} />
 
       {/* Selected food preview */}
       {selectedFood && (
@@ -114,7 +122,7 @@ export function AddFoodDialog({ onAdd }: AddFoodDialogProps) {
         </div>
       </div>
 
-      {/* Add button */}
+      {/* Save button */}
       <Button
         onClick={handleAdd}
         disabled={!isValid}
@@ -122,7 +130,7 @@ export function AddFoodDialog({ onAdd }: AddFoodDialogProps) {
         className="w-full"
       >
         <Plus className="w-4 h-4 mr-1" />
-        Add {selectedFood ? selectedFood.food_name : "Food"}
+        Save {selectedFood ? selectedFood.food_name : "Food"}
       </Button>
     </div>
   );

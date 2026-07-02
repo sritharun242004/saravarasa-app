@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from app.database import get_db
+from app.core.security import get_current_client, require_owner
 from app.models.audit import LifestyleAudit
 from app.models.client import Client, ClientStatus
 from app.models.meal_log import MealLog
@@ -46,7 +47,12 @@ async def _aggregate_nutrition_from_meal_foods(
 
 
 @router.post("/generate/{client_id}")
-async def generate_report(client_id: str, db: AsyncSession = Depends(get_db)):
+async def generate_report(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     client = await db.get(Client, client_id)
     if not client:
         raise HTTPException(404, "Client not found")
@@ -180,7 +186,12 @@ async def generate_report(client_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{client_id}")
-async def get_report(client_id: str, db: AsyncSession = Depends(get_db)):
+async def get_report(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     cr = await db.get(ChallengeReport, client_id)
     if not cr:
         raise HTTPException(

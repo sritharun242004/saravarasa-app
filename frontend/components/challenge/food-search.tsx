@@ -1,18 +1,20 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, Search, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { searchFoods, type FoodSearchResult } from "@/lib/api";
 
 interface FoodSearchProps {
   onSelect: (food: FoodSearchResult) => void;
+  onAddCustom: (name: string) => void;
   placeholder?: string;
   className?: string;
 }
 
 export function FoodSearch({
   onSelect,
+  onAddCustom,
   placeholder = "Search food… e.g. idli, dal, banana",
   className,
 }: FoodSearchProps) {
@@ -36,7 +38,7 @@ export function FoodSearch({
     try {
       const data = await searchFoods(q.trim());
       setResults(data);
-      setOpen(data.length > 0);
+      setOpen(true);
       setActiveIndex(-1);
     } catch {
       setResults([]);
@@ -63,19 +65,24 @@ export function FoodSearch({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!open || results.length === 0) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // An arrow-selected dropdown match wins; otherwise Enter saves the typed text as-is.
+      if (open && activeIndex >= 0 && results[activeIndex]) handleSelect(results[activeIndex]);
+      else handleAddCustom();
+      return;
+    }
+    if (!open) return;
     switch (e.key) {
       case "ArrowDown":
+        if (results.length === 0) return;
         e.preventDefault();
         setActiveIndex((i) => Math.min(i + 1, results.length - 1));
         break;
       case "ArrowUp":
+        if (results.length === 0) return;
         e.preventDefault();
         setActiveIndex((i) => Math.max(i - 1, 0));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (activeIndex >= 0) handleSelect(results[activeIndex]);
         break;
       case "Escape":
         setOpen(false);
@@ -99,7 +106,17 @@ export function FoodSearch({
     inputRef.current?.focus();
   };
 
-  const noResults = !loading && open && results.length === 0 && query.trim().length >= 2;
+  const handleAddCustom = () => {
+    const name = query.trim();
+    if (!name) return;
+    onAddCustom(name);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  };
+
+  const searched = query.trim().length >= 2;
+  const noResults = !loading && searched && results.length === 0;
 
   return (
     <div className={cn("relative", className)}>
@@ -112,23 +129,37 @@ export function FoodSearch({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => searched && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder={placeholder}
           autoComplete="off"
           className={cn(
-            "w-full pl-9 pr-9 py-2.5 rounded-xl border border-border",
+            "w-full pl-9 py-2.5 rounded-xl border border-border",
+            noResults ? "pr-28" : "pr-9",
             "bg-card font-body text-sm text-dark placeholder:text-dark/40",
             "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
             "transition-colors"
           )}
         />
-        <div className="absolute right-3 flex items-center">
-          {loading && <Loader2 className="w-4 h-4 text-dark/40 animate-spin" />}
+        <div className="absolute right-2 flex items-center gap-1">
+          {loading && <Loader2 className="w-4 h-4 text-dark/40 animate-spin mr-1" />}
+          {/* Only shown once a search comes back with nothing — a real dropdown match doesn't need it. */}
+          {noResults && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleAddCustom}
+              title={`Save "${query.trim()}" as entered`}
+              className="flex items-center gap-1 pl-2 pr-2.5 py-1.5 rounded-lg bg-primary/10 text-primary font-body text-xs font-semibold hover:bg-primary/20 transition-colors"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Save
+            </button>
+          )}
           {!loading && query && (
             <button
               onClick={clearQuery}
-              className="text-dark/40 hover:text-dark transition-colors"
+              className="text-dark/40 hover:text-dark transition-colors p-1"
               tabIndex={-1}
             >
               <X className="w-4 h-4" />
@@ -167,12 +198,12 @@ export function FoodSearch({
         </ul>
       )}
 
-      {/* No results */}
+      {/* No dropdown match — point the user at the Save button in the input above */}
       {noResults && (
         <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-xl shadow-lg px-4 py-3">
           <p className="font-body text-sm text-dark/50">
-            No foods found for <span className="font-medium text-dark">"{query}"</span>.
-            Try a different spelling or use Quick Add below.
+            No match for <span className="font-medium text-dark">"{query}"</span> in our food list.
+            Tap <span className="font-medium text-primary">Save</span> above to add it as entered.
           </p>
         </div>
       )}

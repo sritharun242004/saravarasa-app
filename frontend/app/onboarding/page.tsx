@@ -12,6 +12,7 @@ import { Loader2, ArrowRight } from "lucide-react";
 
 const CLIENT_ID_KEY = "sarvarasa_client_id";
 const CLIENT_NAME_KEY = "sarvarasa_client_name";
+const TOKEN_KEY = "sarvarasa_token";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function OnboardingPage() {
       });
       localStorage.setItem(CLIENT_ID_KEY, res.client_id);
       localStorage.setItem(CLIENT_NAME_KEY, res.name);
+      localStorage.setItem(TOKEN_KEY, res.token);
       toast({ title: "Welcome!", description: "Let's start the 7-Day Challenge!" });
       router.push("/challenge");
     } catch {

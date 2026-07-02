@@ -5,6 +5,7 @@ from sqlalchemy import select
 from datetime import datetime
 from pydantic import BaseModel
 from app.database import AsyncSessionLocal
+from app.core.security import get_current_client, require_owner
 from app.models.client import Client
 from app.models.test_attempt import TestAttempt, TestType, TestStatus, Question
 from app.models.report import ComplianceScore
@@ -42,7 +43,12 @@ async def get_db():
 
 
 @router.get("/{client_id}/status", response_model=TestStatusResponse)
-async def get_test_status(client_id: str, db: AsyncSession = Depends(get_db)):
+async def get_test_status(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
@@ -89,7 +95,9 @@ async def get_test_questions(
     client_id: str,
     test_type: str = "MCQ",
     db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
 ):
+    require_owner(client_id, current_client)
     result = await db.execute(
         select(Question).where(
             Question.test_type == test_type,
@@ -105,7 +113,9 @@ async def submit_mcq(
     client_id: str,
     request: SubmitAnswerRequest,
     db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
 ):
+    require_owner(client_id, current_client)
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
@@ -154,7 +164,9 @@ async def submit_descriptive(
     client_id: str,
     request: SubmitAnswerRequest,
     db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
 ):
+    require_owner(client_id, current_client)
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -10,11 +9,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAdminClientDetail, type AdminClientDetail } from "@/lib/api";
 import { Loader2, ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatTime12 } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const MEAL_ORDER = ["BREAKFAST", "LUNCH", "DINNER", "SNACK"];
+
+function formatFullDate(iso?: string | null) {
+  if (!iso) return null;
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
 
 export default function AdminClientPage() {
   const { clientId } = useParams<{ clientId: string }>();
@@ -210,10 +214,12 @@ export default function AdminClientPage() {
               <div className="space-y-4">
                 {Object.entries(byDay).sort().map(([key, entries]) => {
                   const [cycle, day] = key.split("_");
+                  const logDate = entries[0]?.log_date;
                   return (
                     <div key={key}>
                       <p className="font-body text-xs text-dark/50 mb-2 uppercase tracking-wide">
                         Cycle {cycle} · Day {day}
+                        {logDate && <span className="normal-case"> · {formatFullDate(logDate)}</span>}
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {entries
@@ -222,24 +228,40 @@ export default function AdminClientPage() {
                           <div key={entry.meal_type} className="border border-border rounded-xl overflow-hidden">
                             {entry.image_url && (
                               <div className="relative h-28">
-                                <Image
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
                                   src={`${API_URL}${entry.image_url}`}
                                   alt={entry.meal_type}
-                                  fill
-                                  className="object-cover"
+                                  className="absolute inset-0 w-full h-full object-cover"
                                 />
                               </div>
                             )}
                             <div className="p-3">
                               <div className="flex items-center justify-between mb-1">
                                 <span className="font-body text-xs font-semibold text-dark/60 uppercase">{entry.meal_type}</span>
-                                {entry.image_url ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-                                ) : (
-                                  <XCircle className="w-3.5 h-3.5 text-destructive/50" />
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {entry.logged_time && (
+                                    <span className="font-body text-[11px] text-dark/50">{formatTime12(entry.logged_time)}</span>
+                                  )}
+                                  {entry.image_url ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
+                                  ) : (
+                                    <XCircle className="w-3.5 h-3.5 text-destructive/50" />
+                                  )}
+                                </div>
                               </div>
-                              <p className="font-body text-xs text-dark/70 leading-relaxed">{entry.meal_text}</p>
+                              {entry.foods?.length > 0 ? (
+                                <ul className="space-y-0.5">
+                                  {entry.foods.map((f, i) => (
+                                    <li key={i} className="font-body text-xs text-dark/70 flex items-center justify-between gap-2">
+                                      <span className="truncate">{f.quantity} {f.unit} — {f.food_name}</span>
+                                      <span className="text-dark/40 shrink-0">{Math.round(f.calories)} kcal</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="font-body text-xs text-dark/70 leading-relaxed">{entry.meal_text}</p>
+                              )}
                               {entry.food_pattern_tags?.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-2">
                                   {entry.food_pattern_tags.map((tag: string) => (

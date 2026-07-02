@@ -5,6 +5,7 @@ from sqlalchemy import select
 import uuid
 
 from app.database import get_db
+from app.core.security import get_current_client, require_owner
 from app.models.client import Client
 from app.models.lifestyle_audit import LifestyleAuditQuestion, LifestyleAuditResponse
 from app.services.audit_evaluation_engine import evaluate_audit
@@ -33,7 +34,13 @@ async def get_audit_questions(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/submit/{client_id}")
-async def submit_audit(client_id: str, responses: dict, db: AsyncSession = Depends(get_db)):
+async def submit_audit(
+    client_id: str,
+    responses: dict,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     client = await db.get(Client, client_id)
     if not client:
         raise HTTPException(404, "Client not found")
@@ -88,7 +95,12 @@ async def submit_audit(client_id: str, responses: dict, db: AsyncSession = Depen
 
 
 @router.get("/result/{client_id}")
-async def get_audit_result(client_id: str, db: AsyncSession = Depends(get_db)):
+async def get_audit_result(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     result = await db.execute(
         select(LifestyleAuditResponse).where(LifestyleAuditResponse.client_id == client_id)
     )

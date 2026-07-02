@@ -11,10 +11,12 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.config import settings
+from app.core.security import get_current_client, require_owner
 from app.models.client import Client, ClientStatus
 from app.models.payment import PaymentTransaction
 
@@ -35,8 +37,13 @@ class VerifyPaymentRequest(BaseModel):
 
 
 @router.post("/create-order")
-async def create_order(req: CreateOrderRequest, db: AsyncSession = Depends(get_db)):
+async def create_order(
+    req: CreateOrderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
     """Create a Razorpay order for challenge reactivation."""
+    require_owner(req.client_id, current_client)
     client = await db.get(Client, req.client_id)
     if not client:
         raise HTTPException(404, "Client not found")
@@ -80,42 +87,52 @@ async def create_order(req: CreateOrderRequest, db: AsyncSession = Depends(get_d
 
 
 @router.post("/verify")
-async def verify_payment(req: VerifyPaymentRequest, db: AsyncSession = Depends(get_db)):
+async def verify_payment(
+    req: VerifyPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
     """Verify Razorpay signature and unlock new challenge cycle."""
+    require_owner(req.client_id, current_client)
     client = await db.get(Client, req.client_id)
     if not client:
         raise HTTPException(404, "Client not found")
 
-    key_secret = getattr(settings, "razorpay_key_secret", "dev_secret")
-    is_dev = key_secret == "dev_secret" or req.razorpay_order_id.startswith("order_dev_")
-
-    if not is_dev:
-        expected = hmac.new(
-            key_secret.encode(),
-            f"{req.razorpay_order_id}|{req.razorpay_payment_id}".encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        if expected != req.razorpay_signature:
-            raise HTTPException(400, "Invalid payment signature")
-
-    # Find and update the pending transaction
-    from sqlalchemy import select
+    # Only trust an order we actually created and stored server-side — never
+    # take the caller's word for which order/payment this is.
     result = await db.execute(
         select(PaymentTransaction).where(
             PaymentTransaction.razorpay_order_id == req.razorpay_order_id
         )
     )
     txn = result.scalar_one_or_none()
-    if txn:
-        txn.razorpay_payment_id = req.razorpay_payment_id
-        txn.status = "PAID"
-        txn.paid_at = datetime.now(timezone.utc)
-        new_cycle = (client.challenge_cycle or 1) + 1
-        txn.cycle_unlocked = new_cycle
+    if not txn or txn.client_id != req.client_id:
+        raise HTTPException(404, "Payment order not found")
+    if txn.status == "PAID":
+        raise HTTPException(409, "This payment has already been verified")
+
+    # "Dev mode" (skip signature check) is a server-side configuration fact —
+    # never inferred from caller-supplied order_id/signature values.
+    is_dev = settings.razorpay_key_secret in ("", "dev_secret")
+
+    if not is_dev:
+        expected = hmac.new(
+            settings.razorpay_key_secret.encode(),
+            f"{req.razorpay_order_id}|{req.razorpay_payment_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, req.razorpay_signature):
+            raise HTTPException(400, "Invalid payment signature")
+
+    new_cycle = (client.challenge_cycle or 1) + 1
+    txn.razorpay_payment_id = req.razorpay_payment_id
+    txn.status = "PAID"
+    txn.paid_at = datetime.now(timezone.utc)
+    txn.cycle_unlocked = new_cycle
 
     # Unlock client
     client.status = ClientStatus.ACTIVE
-    client.challenge_cycle = (client.challenge_cycle or 1) + 1
+    client.challenge_cycle = new_cycle
 
     await db.commit()
 

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
+from app.core.security import get_current_client, require_admin, require_owner
 from app.models.client import Client
 from app.models.meal_log import MealLog
 from app.services.compliance_engine import calculate_compliance
@@ -11,7 +12,12 @@ router = APIRouter(prefix="/compliance", tags=["Compliance"])
 
 
 @router.get("/{client_id}")
-async def get_client_compliance(client_id: str, db: AsyncSession = Depends(get_db)):
+async def get_client_compliance(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_client: str = Depends(get_current_client),
+):
+    require_owner(client_id, current_client)
     client = await db.get(Client, client_id)
     if not client:
         raise HTTPException(404, "Client not found")
@@ -21,7 +27,7 @@ async def get_client_compliance(client_id: str, db: AsyncSession = Depends(get_d
     return {"client_id": client_id, "client_name": client.name, **calculate_compliance(logs)}
 
 
-@router.get("/batch/{batch_id}")
+@router.get("/batch/{batch_id}", dependencies=[Depends(require_admin)])
 async def get_batch_compliance(batch_id: str, db: AsyncSession = Depends(get_db)):
     clients_result = await db.execute(select(Client).where(Client.batch_id == batch_id))
     clients = clients_result.scalars().all()

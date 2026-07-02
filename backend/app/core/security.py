@@ -47,3 +47,23 @@ def require_admin(authorization: Optional[str] = Header(None)) -> str:
     if not sub or not settings.admin_email or sub.lower() != settings.admin_email.lower():
         raise HTTPException(403, "Admin access required")
     return sub
+
+
+def get_current_client(authorization: Optional[str] = Header(None)) -> str:
+    """FastAPI dependency — resolves the client_id from a valid Bearer token.
+
+    Every client-facing route must use this (not a caller-supplied client_id)
+    to decide *whose* data is being read or written.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Authentication required")
+    sub = decode_token(authorization.removeprefix("Bearer "))
+    if not sub:
+        raise HTTPException(401, "Invalid or expired token")
+    return sub
+
+
+def require_owner(client_id: str, current_client: str) -> None:
+    """Raise 403 unless the authenticated caller matches the resource's client_id."""
+    if client_id != current_client:
+        raise HTTPException(403, "Not authorized for this client")
